@@ -1,0 +1,7 @@
+# Конфигурация бота
+# Скопируй этот файл в config.py и замени значения на свои
+
+BOT_TOKEN = "your_telegram_bot_token_here"
+
+# URL для парсинга (если нужно изменить)
+KARTING_BASE_URL = "https://mayak.kartchrono.com/archive/" 
