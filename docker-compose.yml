@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  carting-bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: carting-bot
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DATABASE_PATH=/app/data/races.db
+      - LOG_FILE=/app/logs/bot.log
+      - PARSER_TIMEOUT=${PARSER_TIMEOUT:-30}
+      - PARSER_MAX_RETRIES=${PARSER_MAX_RETRIES:-3}
+      - MAX_COMPETITORS_PER_PAGE=${MAX_COMPETITORS_PER_PAGE:-10}
+      - ENABLE_WEBHOOKS=${ENABLE_WEBHOOKS:-false}
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+      - WEBHOOK_PORT=${WEBHOOK_PORT:-8443}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - carting-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  carting-network:
+    driver: bridge 

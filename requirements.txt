@@ -1,4 +1,4 @@
-python-telegram-bot[ext]==22.2
+python-telegram-bot[all]==22.2
 beautifulsoup4==4.12.3
 aiohttp==3.10.10
-lxml==4.9.4 
+python-dotenv==1.0.0 
