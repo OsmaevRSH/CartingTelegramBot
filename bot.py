@@ -1,7 +1,14 @@
-import telebot
-from telebot import types
+import logging
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from parsers import ArchiveParser, RaceParser
 from models import ParsingError
+
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 try:
     from config import BOT_TOKEN
@@ -10,31 +17,28 @@ except ImportError:
     print("Создай файл config.py на основе config.py.example")
     exit(1)
 
-bot = telebot.TeleBot(BOT_TOKEN)
-
 # Инициализируем парсеры
 archive_parser = ArchiveParser()
 race_parser = RaceParser()
 
 
-@bot.message_handler(commands=['start'])
-def handle_start(message):
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /start"""
-    bot.reply_to(message, "Привет! Я бот для парсинга результатов картинга.\n"
-                         "Команды:\n"
-                         "/ping - проверка работы\n"
-                         "/archive - получить архив заездов\n"
-                         "/help - помощь")
+    await update.message.reply_text(
+        "Привет! Я бот для парсинга результатов картинга.\n"
+        "Команды:\n"
+        "/ping - проверка работы\n"
+        "/archive - получить архив заездов\n"
+        "/help - помощь"
+    )
 
 
-@bot.message_handler(commands=['ping'])
-def handle_ping(message):
+async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /ping"""
-    bot.reply_to(message, "pong")
+    await update.message.reply_text("pong")
 
 
-@bot.message_handler(commands=['help'])
-def handle_help(message):
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /help"""
     help_text = """
 🏁 Бот для парсинга результатов картинга
@@ -47,19 +51,18 @@ def handle_help(message):
 
 Бот парсит данные с сайта mayak.kartchrono.com
     """
-    bot.reply_to(message, help_text)
+    await update.message.reply_text(help_text)
 
 
-@bot.message_handler(commands=['archive'])
-def handle_archive(message):
+async def archive_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /archive"""
     try:
-        bot.reply_to(message, "🔄 Парсю архив заездов...")
+        await update.message.reply_text("🔄 Парсю архив заездов...")
         
-        day_races = archive_parser.parse()
+        day_races = await archive_parser.parse()
         
         if not day_races:
-            bot.reply_to(message, "❌ Архив пуст")
+            await update.message.reply_text("❌ Архив пуст")
             return
         
         response = "📅 Архив заездов:\n\n"
@@ -78,20 +81,48 @@ def handle_archive(message):
         if len(day_races) > 5:
             response += f"... и еще {len(day_races) - 5} дат"
         
-        bot.reply_to(message, response)
+        await update.message.reply_text(response)
         
     except ParsingError as e:
-        bot.reply_to(message, f"❌ Ошибка парсинга: {e}")
+        await update.message.reply_text(f"❌ Ошибка парсинга: {e}")
     except Exception as e:
-        bot.reply_to(message, f"❌ Неожиданная ошибка: {e}")
+        logger.error(f"Неожиданная ошибка: {e}")
+        await update.message.reply_text(f"❌ Неожиданная ошибка: {e}")
 
 
-@bot.message_handler(func=lambda message: True)
-def handle_all_messages(message):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик всех остальных сообщений"""
-    bot.reply_to(message, "Я не понимаю эту команду. Используй /help для получения списка команд.")
+    await update.message.reply_text(
+        "Я не понимаю эту команду. Используй /help для получения списка команд."
+    )
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработчик ошибок"""
+    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+
+
+def main() -> None:
+    """Главная функция для запуска бота"""
+    # Создаем приложение
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    # Добавляем обработчики команд
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("ping", ping_command))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("archive", archive_command))
+
+    # Обработчик для всех остальных сообщений
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Обработчик ошибок
+    application.add_error_handler(error_handler)
+
+    # Запускаем бота
+    print("🚀 Бот запущен!")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
-    print("🚀 Бот запущен!")
-    bot.polling(none_stop=True) 
+    main() 

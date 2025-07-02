@@ -1,4 +1,4 @@
-import requests
+import aiohttp
 from bs4 import BeautifulSoup
 from datetime import datetime
 from typing import List
@@ -11,14 +11,16 @@ class ArchiveParser:
     def __init__(self):
         self.url_string = "https://mayak.kartchrono.com/archive/"
     
-    def parse(self) -> List[DayRaces]:
+    async def parse(self) -> List[DayRaces]:
         """Парсит главную страницу архива"""
         try:
-            response = requests.get(self.url_string)
-            response.raise_for_status()
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.url_string) as response:
+                    response.raise_for_status()
+                    html = await response.text()
             
-            return self._parse_html(response.text)
-        except requests.RequestException as e:
+            return self._parse_html(html)
+        except aiohttp.ClientError as e:
             raise ParsingError(f"Ошибка загрузки страницы: {e}")
         except Exception as e:
             raise ParsingError(f"Ошибка парсинга: {e}")
@@ -82,17 +84,19 @@ class RaceParser:
     def __init__(self):
         self.url_string = "https://mayak.kartchrono.com/archive/"
     
-    def parse(self, href: str) -> List[Cart]:
+    async def parse(self, href: str) -> List[Cart]:
         """Парсит результаты конкретного заезда"""
         try:
             url = self.url_string + href
             print(f"🔗 Парсим URL: {url}")
             
-            response = requests.get(url)
-            response.raise_for_status()
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    response.raise_for_status()
+                    html = await response.text()
             
-            return self._parse_html(response.text)
-        except requests.RequestException as e:
+            return self._parse_html(html)
+        except aiohttp.ClientError as e:
             raise ParsingError(f"Ошибка загрузки страницы: {e}")
         except Exception as e:
             raise ParsingError(f"Ошибка парсинга: {e}")
