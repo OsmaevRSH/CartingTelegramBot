@@ -12,6 +12,8 @@ except ImportError:
 
 
 def _get_conn():
+    # Создаем папку для базы данных если не существует
+    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
     return sqlite3.connect(DB_FILE)
 
 
@@ -19,17 +21,15 @@ def clear_db():
     """Полностью очищает базу данных"""
     with _get_conn() as conn:
         # Удаляем все таблицы
-        conn.execute("DROP TABLE IF EXISTS user_races")
         conn.execute("DROP TABLE IF EXISTS user_competitors")
         conn.commit()
 
 
 def init_db():
     """Ensure SQLite schema exists."""
+    print(f"🗃️  Инициализация базы данных: {DB_FILE}")
+    
     with _get_conn() as conn:
-        # Удаляем старую таблицу если она есть
-        conn.execute("DROP TABLE IF EXISTS user_races")
-        
         # Таблица для полной информации о конкурентах
         conn.execute(
             """
@@ -55,6 +55,14 @@ def init_db():
             """
         )
         conn.commit()
+        
+        # Проверяем что таблица создана
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_competitors'")
+        if cursor.fetchone():
+            print("✅ База данных успешно инициализирована")
+        else:
+            print("❌ Ошибка создания базы данных")
+            raise RuntimeError("Failed to create database table")
 
 
 

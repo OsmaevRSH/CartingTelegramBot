@@ -52,7 +52,7 @@ if ! command -v docker-compose &> /dev/null; then
 fi
 
 # Проверяем наличие файла .env
-if [ ! -f ".env" ]; then
+if [ ! -f "../.env" ]; then
     echo "❌ Файл .env не найден!"
     echo "Создайте файл .env на основе env.example:"
     echo "cp env.example .env"

@@ -712,131 +712,27 @@ def main() -> None:
             text = "❌ Данные заезда не найдены"
         
         buttons = [
+            [("🗑 Удалить", f"askdel_stats_{d}|{rn}|{cn}|{user_id}")],
             [("← Назад к статистике", f"stats_user_{user_id}")],
         ]
         await query.edit_message_text(text, reply_markup=_build_keyboard(buttons), parse_mode='Markdown')
 
     application.add_handler(CallbackQueryHandler(view_stats_callback, pattern=r"^view_stats_"))
 
-    # -------- inline callbacks for старой системы /my ----------
-
-    async def view_race_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        key = query.data.split("_",1)[1]
-        d, rn, cn = key.split("|")
-        
-        # Сначала проверяем новую таблицу с полной информацией
-        comp_data = get_competitor_by_key(query.from_user.id, d, rn, cn)
-        
-        if comp_data:
-            # Показываем полную информацию
-            date, race_number, race_href, competitor_id, num, name, pos, laps, theor_lap, best_lap, binary_laps, theor_lap_formatted, display_name, gap_to_leader, lap_times_json = comp_data
-            
-            # Показываем имя только если оно не дублирует номер карта
-            name_line = ""
-            if name.strip() and not display_name.startswith("Карт #"):
-                name_line = f"👤 Имя: {name}\n"
-            
-            # Форматируем основную информацию
-            basic_info = (
-                f"📅 Дата: {date}\n"
-                f"🏁 Заезд: {race_number}\n"
-                f"🏎️ Карт: {num}\n"
-                f"{name_line}"
-                f"🏆 Позиция: {pos}\n"
-                f"⏱️ Лучший круг: {best_lap}\n"
-                f"🔬 Теоретический круг: {theor_lap_formatted}\n"
-                f"📊 Отставание: {gap_to_leader}\n"
-                f"🔄 Кругов: {laps}\n\n"
-            )
-            
-            # Добавляем таблицу кругов
-            lap_table = _format_lap_times_table(lap_times_json)
-            
-            text = basic_info + "📋 Данные по кругам:\n" + lap_table
-        else:
-            text = "❌ Данные заезда не найдены"
-        
-        buttons = [
-            [("🗑 Удалить", f"askdel_{key}")],
-            [("← Назад", "back_my")],
-        ]
-        await query.edit_message_text(text, reply_markup=_build_keyboard(buttons), parse_mode='Markdown')
 
 
-    async def delete_race_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        key = query.data.split("_",1)[1]
-        d, rn, cn = key.split("|")
-        
-        # Удаляем запись
-        ok_competitor = delete_competitor(query.from_user.id, d, rn, cn)
-        
-        if ok_competitor:
-            await query.edit_message_text("✅ Запись удалена")
-        else:
-            await query.edit_message_text("❌ Не удалось удалить (уже удалена)")
+    # -------- обработчики для удаления через статистику ----------
 
-
-    async def cancel_my_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Отмена в диалоге /my.
-
-        Если есть ключ заезда, возвращаем подробности по нему,
-        иначе выводим стандартное сообщение об отмене."""
+    async def ask_delete_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
 
-        parts = query.data.split("_", 1)
-        if len(parts) == 2 and "|" in parts[1]:
-            key = parts[1]
-            d, rn, cn = key.split("|")
-            
-            # Проверяем новую таблицу с полной информацией
-            comp_data = get_competitor_by_key(query.from_user.id, d, rn, cn)
-            
-            if comp_data:
-                date, race_number, race_href, competitor_id, num, name, pos, laps, theor_lap, best_lap, binary_laps, theor_lap_formatted, display_name, gap_to_leader, lap_times_json = comp_data
-                
-                # Показываем имя только если оно не дублирует номер карта
-                name_line = ""
-                if name.strip() and not display_name.startswith("Карт #"):
-                    name_line = f"👤 Имя: {name}\n"
-                
-                text = (
-                    f"📅 Дата: {date}\n"
-                    f"🏁 Заезд: {race_number}\n"
-                    f"🏎️ Карт: {num}\n"
-                    f"{name_line}"
-                    f"🏆 Позиция: {pos}\n"
-                    f"⏱️ Лучший круг: {best_lap}\n"
-                    f"🔬 Теоретический круг: {theor_lap_formatted}\n"
-                    f"📊 Отставание: {gap_to_leader}\n"
-                    f"🔄 Кругов: {laps}"
-                )
-            else:
-                text = "❌ Данные заезда не найдены"
+        key = query.data.split("_", 2)[2]
+        d, rn, cn, user_id = key.split("|")
+        user_id = int(user_id)
 
-            buttons = [
-                [("🗑 Удалить", f"askdel_{key}")],
-                [("← Назад", "back_my")],
-            ]
-            await query.edit_message_text(text, reply_markup=_build_keyboard(buttons))
-        else:
-            await query.edit_message_text("Действие отменено")
-
-    # ---------- ask delete confirmation ----------
-
-    async def ask_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-
-        key = query.data.split("_", 1)[1]
-        d, rn, cn = key.split("|")
-
-        # Проверяем новую таблицу с полной информацией
-        comp_data = get_competitor_by_key(query.from_user.id, d, rn, cn)
+        # Проверяем данные заезда
+        comp_data = get_competitor_by_key(user_id, d, rn, cn)
         
         if comp_data:
             date, race_number, race_href, competitor_id, num, name, pos, laps, theor_lap, best_lap, binary_laps, theor_lap_formatted, display_name, gap_to_leader, lap_times_json = comp_data
@@ -866,42 +762,73 @@ def main() -> None:
                 "❓ Точно удалить запись?"
             )
 
-        buttons = [[("🗑 Удалить", f"del_{key}"), ("Отмена", f"cancel_{key}")]]
+        buttons = [[("🗑 Удалить", f"del_stats_{key}"), ("Отмена", f"cancel_stats_{key}")]]
         await query.edit_message_text(confirm_text, reply_markup=_build_keyboard(buttons))
 
-    # ---------- back to list of my races ----------
+    async def delete_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        key = query.data.split("_", 2)[2]
+        d, rn, cn, user_id = key.split("|")
+        user_id = int(user_id)
+        
+        # Удаляем запись
+        ok_competitor = delete_competitor(user_id, d, rn, cn)
+        
+        if ok_competitor:
+            await query.edit_message_text("✅ Запись удалена")
+        else:
+            await query.edit_message_text("❌ Не удалось удалить (уже удалена)")
 
-    async def back_my_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Возвращаемся к списку сохранённых заездов пользователя."""
+    async def cancel_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Отмена удаления в статистике - возвращаемся к просмотру заезда."""
         query = update.callback_query
         await query.answer()
 
-        # Получаем данные пользователя
-        competitors = get_user_competitors(query.from_user.id)
+        key = query.data.split("_", 2)[2]
+        d, rn, cn, user_id = key.split("|")
+        user_id = int(user_id)
         
-        if competitors:
-            # Показываем полную информацию
-            rows = []
-            for comp_data in competitors[:20]:
-                date, race_number, race_href, competitor_id, num, name, pos, laps, theor_lap, best_lap, binary_laps, theor_lap_formatted, display_name, gap_to_leader, lap_times_json = comp_data
-                
-                race_part = race_number.strip()
-                if not race_part.lower().startswith("заезд") and not race_part.startswith("З"):
-                    race_part = f"Заезд {race_part}"
-                
-                text = f"{date} | {race_part} | {display_name} 🏆{pos} ⏱{best_lap}"
-                key = f"{date}|{race_number}|{num}"
-                rows.append([(text, f"view_{key}")])
+        # Проверяем данные заезда
+        comp_data = get_competitor_by_key(user_id, d, rn, cn)
+        
+        if comp_data:
+            date, race_number, race_href, competitor_id, num, name, pos, laps, theor_lap, best_lap, binary_laps, theor_lap_formatted, display_name, gap_to_leader, lap_times_json = comp_data
             
-            await query.edit_message_text("🏁 Ваши заезды:", reply_markup=_build_keyboard(rows))
+            # Показываем имя только если оно не дублирует номер карта
+            name_line = ""
+            if name.strip() and not display_name.startswith("Карт #"):
+                name_line = f"👤 Имя: {name}\n"
+            
+            # Форматируем основную информацию
+            basic_info = (
+                f"📅 Дата: {date}\n"
+                f"🏁 Заезд: {race_number}\n"
+                f"🏎️ Карт: {num}\n"
+                f"{name_line}"
+                f"🏆 Позиция: {pos}\n"
+                f"⏱️ Лучший круг: {best_lap}\n"
+                f"🔬 Теоретический круг: {theor_lap_formatted}\n"
+                f"📊 Отставание: {gap_to_leader}\n"
+                f"🔄 Кругов: {laps}\n\n"
+            )
+            
+            # Добавляем таблицу кругов
+            lap_table = _format_lap_times_table(lap_times_json)
+            
+            text = basic_info + "📋 Данные по кругам:\n" + lap_table
         else:
-            await query.edit_message_text("У вас ещё нет сохранённых заездов.")
+            text = "❌ Данные заезда не найдены"
 
-    application.add_handler(CallbackQueryHandler(view_race_callback, pattern=r"^view_"))
-    application.add_handler(CallbackQueryHandler(ask_delete_callback, pattern=r"^askdel_"))
-    application.add_handler(CallbackQueryHandler(delete_race_callback, pattern=r"^del_"))
-    application.add_handler(CallbackQueryHandler(cancel_my_callback, pattern=r"^cancel_"))
-    application.add_handler(CallbackQueryHandler(back_my_callback, pattern=r"^back_my$"))
+        buttons = [
+            [("🗑 Удалить", f"askdel_stats_{key}")],
+            [("← Назад к статистике", f"stats_user_{user_id}")],
+        ]
+        await query.edit_message_text(text, reply_markup=_build_keyboard(buttons), parse_mode='Markdown')
+
+    application.add_handler(CallbackQueryHandler(ask_delete_stats_callback, pattern=r"^askdel_stats_"))
+    application.add_handler(CallbackQueryHandler(delete_stats_callback, pattern=r"^del_stats_"))
+    application.add_handler(CallbackQueryHandler(cancel_stats_callback, pattern=r"^cancel_stats_"))
 
     # Обработчик ошибок
     application.add_error_handler(error_handler)

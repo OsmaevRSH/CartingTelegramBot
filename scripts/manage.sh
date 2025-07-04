@@ -18,7 +18,9 @@ function show_help() {
     echo "  shell      - Войти в контейнер бота"
     echo "  clean      - Удалить все данные и контейнеры"
     echo "  backup     - Создать резервную копию базы данных"
-    echo "  fix-config - Исправить проблемы с конфигурацией"
+    echo "  clear-db   - Очистить базу данных"
+    echo "  check-perm - Проверить права доступа"
+    echo "  fix-perm   - Исправить права доступа (установить максимальные)"
     echo ""
 }
 
@@ -93,9 +95,19 @@ function backup_bot() {
     fi
 }
 
-function fix_config() {
-    echo "🔧 Исправляю проблемы с конфигурацией..."
-    ./scripts/fix_config.sh
+function clear_database() {
+    echo "🗑️  Очистка базы данных..."
+    docker-compose exec carting-bot python scripts/clear_database.py
+}
+
+function check_permissions() {
+    echo "🔍 Проверка прав доступа..."
+    docker-compose exec carting-bot python scripts/check_permissions.py
+}
+
+function fix_permissions() {
+    echo "🔧 Исправление прав доступа..."
+    docker-compose exec carting-bot bash scripts/fix_permissions.sh
 }
 
 # Основная логика
@@ -130,8 +142,14 @@ case "$1" in
     backup)
         backup_bot
         ;;
-    fix-config)
-        fix_config
+    clear-db)
+        clear_database
+        ;;
+    check-perm)
+        check_permissions
+        ;;
+    fix-perm)
+        fix_permissions
         ;;
     *)
         show_help

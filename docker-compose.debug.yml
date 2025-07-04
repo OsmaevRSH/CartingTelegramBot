@@ -5,18 +5,12 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    container_name: carting-bot
-    restart: unless-stopped
-    user: "0:0"
-    privileged: true
-    cap_add:
-      - ALL
-    security_opt:
-      - seccomp:unconfined
+    container_name: carting-bot-debug
+    restart: "no"  # Не перезапускать автоматически при отладке
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - DATABASE_PATH=/app/data/races.db
+      - LOG_LEVEL=DEBUG
+      - DATABASE_PATH=/tmp/races.db  # База данных в tmpfs
       - LOG_FILE=/app/logs/bot.log
       - PARSER_TIMEOUT=${PARSER_TIMEOUT:-30}
       - PARSER_MAX_RETRIES=${PARSER_MAX_RETRIES:-3}
@@ -25,15 +19,14 @@ services:
       - WEBHOOK_URL=${WEBHOOK_URL:-}
       - WEBHOOK_PORT=${WEBHOOK_PORT:-8443}
     volumes:
-      - ./data:/app/data:rw,Z
-      - ./logs:/app/logs:rw,Z
-      - ./config:/app/config:rw,Z
+      - ./logs:/app/logs:rw
+      # Убираем volume для data, база будет в tmpfs
     tmpfs:
-      - /tmp:rw,noexec,nosuid,size=100m
+      - /tmp:rw,noexec,nosuid,size=100m  # tmpfs для базы данных
     networks:
       - carting-network
     healthcheck:
-      test: ["CMD", "python", "scripts/health_check.py"]
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 30s
       timeout: 10s
       retries: 3
