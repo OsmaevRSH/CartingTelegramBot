@@ -3,7 +3,7 @@ from datetime import date
 from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, ContextTypes,
-    ConversationHandler, CallbackQueryHandler
+    ConversationHandler, CallbackQueryHandler, MessageHandler, filters
 )
 from src.parsers.parsers import ArchiveParser, RaceParser, FullRaceInfoParser
 from src.models.models import ParsingError
@@ -82,6 +82,29 @@ def _format_lap_times_table(lap_times_json: str) -> str:
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик ошибок"""
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
+    
+    # Отправляем пользователю понятную ошибку
+    if update and hasattr(update, 'effective_message') and update.effective_message:
+        try:
+            error_msg = str(context.error)
+            
+            # Определяем тип ошибки и формируем понятное сообщение
+            if "readonly database" in error_msg.lower():
+                user_error = "❌ **ПРОБЛЕМА С БАЗОЙ ДАННЫХ**\n\n🔒 База данных недоступна для записи.\n💡 Попробуйте позже или обратитесь к администратору."
+            elif "network" in error_msg.lower() or "connection" in error_msg.lower():
+                user_error = "❌ **ПРОБЛЕМА С СЕТЬЮ**\n\n🌐 Нет связи с сервером карт.\n💡 Проверьте интернет-соединение и попробуйте позже."
+            elif "parsing" in error_msg.lower():
+                user_error = "❌ **ОШИБКА ОБРАБОТКИ ДАННЫХ**\n\n📄 Не удалось обработать данные с сайта.\n💡 Возможно, сайт временно недоступен."
+            elif "timeout" in error_msg.lower():
+                user_error = "❌ **ПРЕВЫШЕНО ВРЕМЯ ОЖИДАНИЯ**\n\n⏱️ Сервер слишком долго отвечает.\n💡 Попробуйте еще раз через несколько секунд."
+            else:
+                user_error = "❌ **ТЕХНИЧЕСКАЯ ОШИБКА**\n\n🔧 Произошла непредвиденная ошибка.\n💡 Попробуйте еще раз или обратитесь к администратору."
+            
+            await update.effective_message.reply_text(user_error)
+            
+        except Exception:
+            # Если не можем отправить сообщение об ошибке, просто логируем
+            logger.error("Failed to send error message to user")
 
 
 async def _set_default_commands(app: Application) -> None:
@@ -125,6 +148,26 @@ async def add_race_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Точка входа в сценарий добавления заезда."""
     chat_id = update.effective_chat.id
 
+    # Удаляем команду пользователя для чистоты чата
+    try:
+        message_to_delete = update.message or update.edited_message
+        if message_to_delete:
+            # Проверяем, можем ли мы удалять сообщения в этом чате
+            chat_member = await context.bot.get_chat_member(chat_id, context.bot.id)
+            if chat_member.can_delete_messages or chat_member.status in ['administrator', 'creator']:
+                await message_to_delete.delete()
+            else:
+                # Если нет прав на удаление, отправляем реакцию "🗑️" на команду
+                try:
+                    await message_to_delete.set_reaction("🗑️")
+                except:
+                    pass  # Игнорируем если реакции не поддерживаются
+    except Exception as e:
+        # Добавляем логирование для отладки
+        import logging
+        logging.warning(f"Не удалось удалить команду: {e}")
+        pass  # Игнорируем ошибки удаления
+
     # Пытаемся получить список администраторов (хотя бы они гарантированно доступны)
     try:
         admins = await context.bot.get_chat_administrators(chat_id)
@@ -136,7 +179,9 @@ async def add_race_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     initiator = update.effective_user
     users_dict = {initiator.id: initiator}
     for u in users:
-        users_dict.setdefault(u.id, u)
+        # Исключаем самого бота из списка участников
+        if u.id != context.bot.id:
+            users_dict.setdefault(u.id, u)
 
     users_ordered = list(users_dict.values())
     # сохраняем список, чтобы можно было вернуться
@@ -145,7 +190,7 @@ async def add_race_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Строим клавиатуру – одна кнопка на пользователя
     keyboard = _build_keyboard([[(u.full_name or u.username or str(u.id), f"user_{u.id}")] for u in users_ordered])
 
-    await update.message.reply_text("Кого записываем?", reply_markup=keyboard)
+    await context.bot.send_message(chat_id=chat_id, text="Кого записываем?", reply_markup=keyboard)
     return SELECT_USER
 
 
@@ -219,14 +264,65 @@ async def _send_date_page(query, context, today_exists: bool, page: int):
     await query.edit_message_text(text, reply_markup=keyboard)
 
 
+async def _send_races_page(query, context, page: int):
+    """Отправляет постраничный список заездов"""
+    races = context.user_data.get("current_races", [])
+    context.user_data["races_page"] = page
+    
+    start = page * PAGE_SIZE
+    end = start + PAGE_SIZE
+    slice_races = races[start:end]
+
+    rows = []
+    # кнопки заездов
+    for idx, race in enumerate(slice_races, start=start):
+        rows.append([(f"Заезд {race.number}", f"race_{idx}")])
+
+    # пагинация для заездов
+    nav = []
+    if start > 0:
+        nav.append(("« Назад", f"races_page_{page-1}"))
+    if end < len(races):
+        nav.append(("Вперёд »", f"races_page_{page+1}"))
+    if nav:
+        rows.append(nav)
+
+    # кнопка назад к датам
+    rows.append([("← Назад к выбору даты", "back_dates")])
+
+    keyboard = _build_keyboard(rows)
+    header = (
+        f"Пользователь: {context.user_data.get('selected_user_name','')}\n"
+        f"Дата: {context.user_data.get('selected_date_text','')}\n"
+        f"Всего заездов: {len(races)}"
+    )
+    await query.edit_message_text(f"{header}\nВыберите заезд:", reply_markup=keyboard)
+
+
 # step 2 – pagination ------------------------------------------
 
 async def date_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     page = int(query.data.split("_", 1)[1])
-    await _send_date_page(query, context, today_exists=True, page=page)
+    
+    # получаем today_exists из данных
+    dates = context.user_data.get("other_dates", [])
+    today = date.today()
+    today_exists = any(dr.date.date() == today for dr in dates)
+    
+    await _send_date_page(query, context, today_exists=today_exists, page=page)
     return SELECT_DATE
+
+
+async def races_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик пагинации заездов"""
+    query = update.callback_query
+    await query.answer()
+    page = int(query.data.split("_", 2)[2])
+    
+    await _send_races_page(query, context, page=page)
+    return SHOW_RACES
 
 
 # step 3 – date chosen -----------------------------------------
@@ -262,15 +358,8 @@ async def select_date_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data["selected_date_actual"] = actual_date
     context.user_data["current_races"] = day_race.races
 
-    # показываем список заездов (до 10 для начала)
-    buttons = [[(f"Заезд {r.number}", f"race_{idx}")] for idx, r in enumerate(day_race.races[:10])]
-    # добавляем кнопку назад
-    buttons.append([("← Назад к выбору даты", "back_dates")])
-
-    keyboard = _build_keyboard(buttons)
-    header = f"Пользователь: {context.user_data.get('selected_user_name','')}\nДата: {date_text}"
-    await query.edit_message_text(f"{header}\nВыберите заезд:", reply_markup=keyboard)
-
+    # показываем постраничный список заездов  
+    await _send_races_page(query, context, page=0)
     return SHOW_RACES
 
 
@@ -382,24 +471,50 @@ async def cart_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
             'lap_times': selected_competitor.lap_times,
         }
         
-        save_competitor(
-            user_id=query.from_user.id,
-            date=context.user_data.get("selected_date_actual",""),
-            race_number=context.user_data.get("selected_race_number",""),
-            race_href=race_href,
-            competitor_data=competitor_data
-        )
-
-        resp = (
-            "✅ **ЗАЕЗД СОХРАНЁН** ✅\n\n"
-            f"👤 Пользователь: {context.user_data.get('selected_user_name','')}\n"
-            f"📅 Дата: {context.user_data.get('selected_date_text','')}\n"
-            f"🏁 Заезд: {context.user_data.get('selected_race_number','')}\n"
-            f"🏎️ Карт: {selected_competitor.num}\n"
-            f"⏱️ Лучший круг: {selected_competitor.best_lap}\n\n"
-            "🎉 Данные успешно сохранены с детальной информацией о кругах!"
-        )
-        await query.edit_message_text(resp)
+        # Сохраняем данные в базу
+        try:
+            save_result = save_competitor(
+                user_id=context.user_data.get("selected_user"),
+                date=context.user_data.get("selected_date_actual",""),
+                race_number=context.user_data.get("selected_race_number",""),
+                race_href=race_href,
+                competitor_data=competitor_data
+            )
+            
+            if save_result:
+                resp = (
+                    "✅ **ЗАЕЗД СОХРАНЁН** ✅\n\n"
+                    f"👤 Пользователь: {context.user_data.get('selected_user_name','')}\n"
+                    f"📅 Дата: {context.user_data.get('selected_date_text','')}\n"
+                    f"🏁 Заезд: {context.user_data.get('selected_race_number','')}\n"
+                    f"🏎️ Карт: {selected_competitor.num}\n"
+                    f"⏱️ Лучший круг: {selected_competitor.best_lap}\n\n"
+                    "🎉 Данные успешно сохранены с детальной информацией о кругах!"
+                )
+            else:
+                resp = (
+                    "⚠️ **ЗАЕЗД УЖЕ СУЩЕСТВУЕТ** ⚠️\n\n"
+                    f"👤 Пользователь: {context.user_data.get('selected_user_name','')}\n"
+                    f"📅 Дата: {context.user_data.get('selected_date_text','')}\n"
+                    f"🏁 Заезд: {context.user_data.get('selected_race_number','')}\n"
+                    f"🏎️ Карт: {selected_competitor.num}\n\n"
+                    "ℹ️ Этот заезд уже сохранен в базе данных"
+                )
+            await query.edit_message_text(resp)
+            
+        except Exception as e:
+            # Красивое отображение ошибки базы данных
+            error_msg = str(e)
+            if "readonly database" in error_msg.lower():
+                user_error = "❌ **ОШИБКА ПРАВ ДОСТУПА**\n\n🔒 База данных доступна только для чтения.\n💡 Обратитесь к администратору для исправления прав доступа."
+            elif "no such table" in error_msg.lower():
+                user_error = "❌ **ОШИБКА БАЗЫ ДАННЫХ**\n\n🗃️ Таблица не найдена.\n💡 Возможно, база данных не инициализирована."
+            elif "constraint" in error_msg.lower():
+                user_error = "❌ **ОШИБКА ДУБЛИРОВАНИЯ**\n\n📋 Такой заезд уже существует в базе.\n💡 Попробуйте выбрать другой заезд."
+            else:
+                user_error = f"❌ **ОШИБКА СОХРАНЕНИЯ**\n\n🔧 Техническая ошибка: {error_msg[:100]}\n💡 Попробуйте еще раз или обратитесь к администратору."
+            
+            await query.edit_message_text(user_error)
         
     except ParsingError as e:
         # Если не удалось получить полную информацию, возвращаем ошибку
@@ -415,17 +530,9 @@ async def back_to_races_callback(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
 
-    # reuse previously built list of races
-    races = context.user_data.get("current_races", [])
-    buttons = [[(f"Заезд {r.number}", f"race_{idx}")] for idx, r in enumerate(races[:10])]
-    buttons.append([("← Назад к выбору даты", "back_dates")])
-    keyboard = _build_keyboard(buttons)
-
-    header = (
-        f"Пользователь: {context.user_data.get('selected_user_name','')}\n"
-        f"Дата: {context.user_data.get('selected_date_text','')}"
-    )
-    await query.edit_message_text(f"{header}\nВыберите заезд:", reply_markup=keyboard)
+    # возвращаемся к списку заездов с постраничной выдачей
+    page = context.user_data.get("races_page", 0)
+    await _send_races_page(query, context, page=page)
     return SHOW_RACES
 
 
@@ -434,27 +541,51 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать статистику выбранного пользователя"""
     chat_id = update.effective_chat.id
 
+    # Удаляем команду пользователя для чистоты чата
+    try:
+        message_to_delete = update.message or update.edited_message
+        if message_to_delete:
+            # Проверяем, можем ли мы удалять сообщения в этом чате
+            chat_member = await context.bot.get_chat_member(chat_id, context.bot.id)
+            if chat_member.can_delete_messages or chat_member.status in ['administrator', 'creator']:
+                await message_to_delete.delete()
+            else:
+                # Если нет прав на удаление, отправляем реакцию "🗑️" на команду
+                try:
+                    await message_to_delete.set_reaction("🗑️")
+                except:
+                    pass  # Игнорируем если реакции не поддерживаются
+    except Exception as e:
+        # Добавляем логирование для отладки
+        import logging
+        logging.warning(f"Не удалось удалить команду: {e}")
+        pass  # Игнорируем ошибки удаления
+
     # Получаем всех пользователей, у которых есть заезды
     all_competitors = get_all_competitors()
     if not all_competitors:
-        await update.message.reply_text("📊 Пока нет сохранённых заездов.")
+        await context.bot.send_message(chat_id=chat_id, text="📊 Пока нет сохранённых заездов.")
         return
 
-    # Получаем уникальных пользователей
+    # Получаем уникальных пользователей (исключаем бота)
     user_ids = set()
     for comp in all_competitors:
-        user_ids.add(comp[0])  # user_id - первый элемент
+        user_id = comp[0]  # user_id - первый элемент
+        # Исключаем самого бота из статистики
+        if user_id != context.bot.id:
+            user_ids.add(user_id)
 
     # Пытаемся получить информацию о пользователях
     try:
         admins = await context.bot.get_chat_administrators(chat_id)
-        users_info = {adm.user.id: adm.user for adm in admins}
+        users_info = {adm.user.id: adm.user for adm in admins if adm.user.id != context.bot.id}
     except:
         users_info = {}
 
-    # Добавляем инициатора
+    # Добавляем инициатора (если он не бот)
     initiator = update.effective_user
-    users_info[initiator.id] = initiator
+    if initiator.id != context.bot.id:
+        users_info[initiator.id] = initiator
 
     # Создаем список пользователей для выбора
     users_list = []
@@ -466,12 +597,12 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             users_list.append((f"ID:{user_id}", f"stats_user_{user_id}"))
 
     if not users_list:
-        await update.message.reply_text("📊 Не найдено пользователей с заездами.")
+        await context.bot.send_message(chat_id=chat_id, text="📊 Не найдено пользователей с заездами.")
         return
 
     # Создаем клавиатуру
     keyboard = _build_keyboard([users_list[i:i+1] for i in range(len(users_list))])
-    await update.message.reply_text("👤 Выберите пользователя для просмотра статистики:", reply_markup=keyboard)
+    await context.bot.send_message(chat_id=chat_id, text="👤 Выберите пользователя для просмотра статистики:", reply_markup=keyboard)
 
 
 def main() -> None:
@@ -485,9 +616,12 @@ def main() -> None:
     # Регистрируем системное меню команд
     application.post_init = _set_default_commands
 
-    # Handler for /add command conversation
+    # Handler for /add command conversation (с поддержкой @username)
     conv = ConversationHandler(
-        entry_points=[CommandHandler("add", add_race_command)],
+        entry_points=[
+            CommandHandler("add", add_race_command),
+            MessageHandler(filters.Regex(r'^/add@\w+'), add_race_command)
+        ],
         states={
             SELECT_USER: [CallbackQueryHandler(select_user_callback, pattern=r"^user_\d+$")],
             SELECT_DATE: [
@@ -497,6 +631,7 @@ def main() -> None:
             ],
             SHOW_RACES: [
                 CallbackQueryHandler(back_to_dates_callback, pattern=r"^back_dates$"),
+                CallbackQueryHandler(races_page_callback, pattern=r"^races_page_\d+$"),
                 CallbackQueryHandler(race_selected_callback, pattern=r"^race_\d+$"),
             ],
             SHOW_CARTS: [
@@ -508,8 +643,9 @@ def main() -> None:
     )
     application.add_handler(conv)
 
-    # команда /stats – показать статистику пользователя
+    # команда /stats – показать статистику пользователя (с поддержкой @username)
     application.add_handler(CommandHandler("stats", stats_command))
+    application.add_handler(MessageHandler(filters.Regex(r'^/stats@\w+'), stats_command))
     
 
 
@@ -577,10 +713,16 @@ def main() -> None:
     # команда /best – общий рейтинг
     async def best_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать рейтинг лучших гонщиков"""
+        # Удаляем команду пользователя для чистоты чата
+        try:
+            await update.message.delete()
+        except Exception:
+            pass  # Игнорируем ошибки удаления
+            
         competitors = get_best_competitors(20)
         
         if not competitors:
-            await update.message.reply_text("🏆 Пока нет данных для рейтинга.")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="🏆 Пока нет данных для рейтинга.")
             return
         
         text = "🏆 **РЕЙТИНГ ЛУЧШИХ ГОНЩИКОВ** 🏆\n"
@@ -617,20 +759,27 @@ def main() -> None:
         text += "```\n"
         text += "⏱️ Рейтинг по лучшему кругу"
         
-        await update.message.reply_text(text, parse_mode='Markdown')
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode='Markdown')
 
     application.add_handler(CommandHandler("best", best_command))
+    application.add_handler(MessageHandler(filters.Regex(r'^/best@\w+'), best_command))
 
     # команда /best_today – рейтинг за сегодня
     async def best_today_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать рейтинг лучших гонщиков за сегодня"""
+        # Удаляем команду пользователя для чистоты чата
+        try:
+            await update.message.delete()
+        except Exception:
+            pass  # Игнорируем ошибки удаления
+            
         from datetime import date
         today = date.today().strftime("%d.%m.%Y")
         
         competitors = get_best_competitors_today(today, 20)
         
         if not competitors:
-            await update.message.reply_text("🏆 Сегодня заездов не было.")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="🏆 Сегодня заездов не было.")
             return
         
         text = f"🏆 **РЕЙТИНГ ЗА СЕГОДНЯ ({today})** 🏆\n"
@@ -667,9 +816,10 @@ def main() -> None:
         text += "```\n"
         text += "⏱️ Рейтинг по лучшему кругу за сегодня"
         
-        await update.message.reply_text(text, parse_mode='Markdown')
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode='Markdown')
 
     application.add_handler(CommandHandler("best_today", best_today_command))
+    application.add_handler(MessageHandler(filters.Regex(r'^/best_today@\w+'), best_today_command))
 
     # обработчик просмотра заезда через статистику
     async def view_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -772,13 +922,26 @@ def main() -> None:
         d, rn, cn, user_id = key.split("|")
         user_id = int(user_id)
         
-        # Удаляем запись
-        ok_competitor = delete_competitor(user_id, d, rn, cn)
-        
-        if ok_competitor:
-            await query.edit_message_text("✅ Запись удалена")
-        else:
-            await query.edit_message_text("❌ Не удалось удалить (уже удалена)")
+        # Удаляем запись с обработкой ошибок
+        try:
+            ok_competitor = delete_competitor(user_id, d, rn, cn)
+            
+            if ok_competitor:
+                await query.edit_message_text("✅ **ЗАПИСЬ УДАЛЕНА**\n\n🗑️ Заезд успешно удален из базы данных")
+            else:
+                await query.edit_message_text("⚠️ **ЗАПИСЬ НЕ НАЙДЕНА**\n\n🔍 Возможно, запись уже была удалена ранее")
+                
+        except Exception as e:
+            # Красивое отображение ошибки удаления
+            error_msg = str(e)
+            if "readonly database" in error_msg.lower():
+                user_error = "❌ **ОШИБКА ПРАВ ДОСТУПА**\n\n🔒 База данных доступна только для чтения.\n💡 Обратитесь к администратору для исправления прав доступа."
+            elif "no such table" in error_msg.lower():
+                user_error = "❌ **ОШИБКА БАЗЫ ДАННЫХ**\n\n🗃️ Таблица не найдена.\n💡 Возможно, база данных повреждена."
+            else:
+                user_error = f"❌ **ОШИБКА УДАЛЕНИЯ**\n\n🔧 Техническая ошибка: {error_msg[:100]}\n💡 Попробуйте еще раз или обратитесь к администратору."
+            
+            await query.edit_message_text(user_error)
 
     async def cancel_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Отмена удаления в статистике - возвращаемся к просмотру заезда."""

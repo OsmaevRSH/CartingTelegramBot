@@ -12,8 +12,21 @@ except ImportError:
 
 
 def _get_conn():
+    """Получает соединение с базой данных, создавая файл при необходимости"""
     # Создаем папку для базы данных если не существует
     DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Создаем файл базы данных если не существует
+    if not DB_FILE.exists():
+        DB_FILE.touch(mode=0o666)
+    
+    # Пытаемся установить права доступа (игнорируем ошибки)
+    try:
+        import os
+        os.chmod(DB_FILE, 0o666)
+    except Exception:
+        pass
+    
     return sqlite3.connect(DB_FILE)
 
 

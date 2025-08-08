@@ -17,11 +17,14 @@ COPY requirements.txt .
 # Устанавливаем Python зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем весь проект
-COPY . .
+# Копируем только нужные файлы и директории
+COPY main.py .
+COPY src/ src/
+COPY config/ config/
+COPY utils/ utils/
 
 # Копируем и делаем исполняемым entrypoint скрипт
-COPY docker/entrypoint.sh /entrypoint.sh
+COPY deployment/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Создаем config/__init__.py если не существует
@@ -48,8 +51,7 @@ RUN find /app -type f -name "*.py" -exec chmod 777 {} \;
 RUN find /app -type f -name "*.sh" -exec chmod 777 {} \;
 
 # Делаем все скрипты исполняемыми
-RUN chmod +x /app/scripts/*.py 2>/dev/null || true
-RUN chmod +x /app/scripts/*.sh 2>/dev/null || true
+RUN chmod +x /app/utils/*.py 2>/dev/null || true
 RUN chmod +x /app/main.py 2>/dev/null || true
 
 # Экспонируем порт для webhook'ов (если понадобится)

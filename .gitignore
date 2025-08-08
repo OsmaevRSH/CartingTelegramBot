@@ -72,5 +72,5 @@ ehthumbs.db
 Thumbs.db
 
 # Config files with sensitive data
-config.py
+data/races.db
 .env 

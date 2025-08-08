@@ -1,10 +1,8 @@
-version: '3.8'
-
 services:
   carting-bot:
     build:
-      context: .
-      dockerfile: docker/Dockerfile
+      context: ../
+      dockerfile: deployment/docker/Dockerfile
     container_name: carting-bot
     restart: unless-stopped
     user: "0:0"
@@ -25,15 +23,15 @@ services:
       - WEBHOOK_URL=${WEBHOOK_URL:-}
       - WEBHOOK_PORT=${WEBHOOK_PORT:-8443}
     volumes:
-      - ./data:/app/data:rw,Z
-      - ./logs:/app/logs:rw,Z
-      - ./config:/app/config:rw,Z
+      - ../data:/app/data:rw,Z
+      - ../logs:/app/logs:rw,Z
+      - ../config:/app/config:rw,Z
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=100m
     networks:
       - carting-network
     healthcheck:
-      test: ["CMD", "python", "scripts/health_check.py"]
+      test: ["CMD", "python", "utils/health_check.py"]
       interval: 30s
       timeout: 10s
       retries: 3

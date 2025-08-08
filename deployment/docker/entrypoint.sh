@@ -27,8 +27,7 @@ chmod -R 777 /app/logs 2>/dev/null || true
 chmod -R 777 /app/config 2>/dev/null || true
 
 # Убеждаемся, что все скрипты исполняемы
-chmod +x /app/scripts/*.py 2>/dev/null || true
-chmod +x /app/scripts/*.sh 2>/dev/null || true
+chmod +x /app/utils/*.py 2>/dev/null || true
 chmod +x /app/main.py 2>/dev/null || true
 
 # Максимальные права для Python файлов
@@ -73,7 +72,7 @@ fi
 
 # Запуск скрипта для установки максимальных прав доступа
 echo "🔐 Запускаю скрипт установки максимальных прав доступа..."
-bash /app/scripts/fix_permissions.sh
+# Permissions are now handled automatically in this script
 
 echo "✅ Конфигурация проверена"
 echo "✅ Максимальные права доступа установлены автоматически"
