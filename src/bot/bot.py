@@ -128,6 +128,47 @@ def _build_keyboard(rows):
     return InlineKeyboardMarkup([[InlineKeyboardButton(text, callback_data=data) for text, data in row] for row in rows])
 
 
+async def _send_message_with_thread(context: ContextTypes.DEFAULT_TYPE, update: Update, text: str, reply_markup=None, parse_mode=None):
+    """Отправляет сообщение с учетом thread_id для каналов с темами"""
+    chat_id = update.effective_chat.id
+    
+    # Получаем message_thread_id если сообщение было отправлено в теме
+    message_thread_id = None
+    if update.effective_message and hasattr(update.effective_message, 'message_thread_id'):
+        message_thread_id = update.effective_message.message_thread_id
+    
+    # Отправляем сообщение с учетом темы
+    return await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode,
+        message_thread_id=message_thread_id
+    )
+
+
+async def _send_message_with_thread_direct(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_thread_id: int, text: str, reply_markup=None, parse_mode=None):
+    """Отправляет сообщение с указанными chat_id и thread_id"""
+    return await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode,
+        message_thread_id=message_thread_id
+    )
+
+
+async def _edit_message_with_thread(query, text: str, reply_markup=None, parse_mode=None):
+    """Редактирует сообщение с учетом thread_id для каналов с темами"""
+    # Для edit_message_text message_thread_id НЕ поддерживается в Telegram Bot API
+    # Сообщение автоматически остается в той же теме, где было отправлено изначально
+    return await query.edit_message_text(
+        text=text,
+        reply_markup=reply_markup,
+        parse_mode=parse_mode
+    )
+
+
 def _send_user_keyboard(target, context):
     """Отрисовывает клавиатуру выбора пользователя в сообщении/колбэке target."""
     users_ordered = context.user_data.get("user_options", [])
@@ -190,7 +231,7 @@ async def add_race_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Строим клавиатуру – одна кнопка на пользователя
     keyboard = _build_keyboard([[(u.full_name or u.username or str(u.id), f"user_{u.id}")] for u in users_ordered])
 
-    await context.bot.send_message(chat_id=chat_id, text="Кого записываем?", reply_markup=keyboard)
+    await _send_message_with_thread(context, update, "Кого записываем?", reply_markup=keyboard)
     return SELECT_USER
 
 
@@ -211,7 +252,7 @@ async def select_user_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         day_races = await archive_parser.parse()
     except ParsingError as e:
-        await query.edit_message_text(f"❌ Ошибка парсинга архива: {e}")
+        await _edit_message_with_thread(query, f"❌ Ошибка парсинга архива: {e}")
         return ConversationHandler.END
 
     # Отделяем сегодняшнюю дату
@@ -261,7 +302,8 @@ async def _send_date_page(query, context, today_exists: bool, page: int):
     user_text = context.user_data.get("selected_user_name", "")
     subtitle = f"Пользователь: {user_text}\n"
     text = subtitle + ("Выберите дату заезда:" if slice_dates else "Нет данных для отображения")
-    await query.edit_message_text(text, reply_markup=keyboard)
+    
+    await _edit_message_with_thread(query, text, reply_markup=keyboard)
 
 
 async def _send_races_page(query, context, page: int):
@@ -296,7 +338,8 @@ async def _send_races_page(query, context, page: int):
         f"Дата: {context.user_data.get('selected_date_text','')}\n"
         f"Всего заездов: {len(races)}"
     )
-    await query.edit_message_text(f"{header}\nВыберите заезд:", reply_markup=keyboard)
+    
+    await _edit_message_with_thread(query, f"{header}\nВыберите заезд:", reply_markup=keyboard)
 
 
 # step 2 – pagination ------------------------------------------
@@ -347,7 +390,7 @@ async def select_date_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         day_race = context.user_data["other_dates"][idx]
 
     if not day_race:
-        await query.edit_message_text("❌ Заезды не найдены")
+        await _edit_message_with_thread(query, "❌ Заезды не найдены")
         return ConversationHandler.END
 
     # сохраняем выбранную дату и список заездов
@@ -391,7 +434,7 @@ async def race_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     idx = int(query.data.split("_", 1)[1])
     races_list = context.user_data.get("current_races", [])
     if idx >= len(races_list):
-        await query.edit_message_text("❌ Не удалось найти заезд")
+        await _edit_message_with_thread(query, "❌ Не удалось найти заезд")
         return ConversationHandler.END
 
     race = races_list[idx]
@@ -400,7 +443,7 @@ async def race_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     try:
         carts = await race_parser.parse(race.href)
     except ParsingError as e:
-        await query.edit_message_text(f"❌ Ошибка парсинга: {e}")
+        await _edit_message_with_thread(query, f"❌ Ошибка парсинга: {e}")
         return ConversationHandler.END
 
     context.user_data["current_carts"] = carts
@@ -419,7 +462,7 @@ async def race_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
         f"Заезд: {race.number}"
     )
 
-    await query.edit_message_text(f"{header}\nВыберите карт:", reply_markup=keyboard)
+    await _edit_message_with_thread(query, f"{header}\nВыберите карт:", reply_markup=keyboard)
     return SHOW_CARTS
 
 
@@ -431,7 +474,7 @@ async def cart_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     idx = int(query.data.split("_",1)[1])
     carts = context.user_data.get("current_carts", [])
     if idx >= len(carts):
-        await query.edit_message_text("❌ Не удалось найти карт")
+        await _edit_message_with_thread(query, "❌ Не удалось найти карт")
         return ConversationHandler.END
 
     cart = carts[idx]
@@ -441,7 +484,7 @@ async def cart_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
     
     # Получаем полную информацию о заезде
     try:
-        await query.edit_message_text("🔄 Получаю детальную информацию о заезде...")
+        await _edit_message_with_thread(query, "🔄 Получаю детальную информацию о заезде...")
         competitors = await full_race_parser.parse(race_href, carts)
         
         # Находим выбранного конкурента
@@ -452,7 +495,7 @@ async def cart_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
                 break
         
         if not selected_competitor:
-            await query.edit_message_text("❌ Не удалось найти детальную информацию о выбранном карте")
+            await _edit_message_with_thread(query, "❌ Не удалось найти детальную информацию о выбранном карте")
             return ConversationHandler.END
         
         # Сохраняем полную информацию о конкуренте
@@ -500,7 +543,7 @@ async def cart_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
                     f"🏎️ Карт: {selected_competitor.num}\n\n"
                     "ℹ️ Этот заезд уже сохранен в базе данных"
                 )
-            await query.edit_message_text(resp)
+            await _edit_message_with_thread(query, resp)
             
         except Exception as e:
             # Красивое отображение ошибки базы данных
@@ -514,11 +557,11 @@ async def cart_selected_callback(update: Update, context: ContextTypes.DEFAULT_T
             else:
                 user_error = f"❌ **ОШИБКА СОХРАНЕНИЯ**\n\n🔧 Техническая ошибка: {error_msg[:100]}\n💡 Попробуйте еще раз или обратитесь к администратору."
             
-            await query.edit_message_text(user_error)
+            await _edit_message_with_thread(query, user_error)
         
     except ParsingError as e:
         # Если не удалось получить полную информацию, возвращаем ошибку
-        await query.edit_message_text(f"❌ Ошибка получения детальных данных: {str(e)[:100]}")
+        await _edit_message_with_thread(query, f"❌ Ошибка получения детальных данных: {str(e)[:100]}")
         return ConversationHandler.END
     
     return ConversationHandler.END
@@ -564,7 +607,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Получаем всех пользователей, у которых есть заезды
     all_competitors = get_all_competitors()
     if not all_competitors:
-        await context.bot.send_message(chat_id=chat_id, text="📊 Пока нет сохранённых заездов.")
+        await _send_message_with_thread(context, update, "📊 Пока нет сохранённых заездов.")
         return
 
     # Получаем уникальных пользователей (исключаем бота)
@@ -597,12 +640,12 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             users_list.append((f"ID:{user_id}", f"stats_user_{user_id}"))
 
     if not users_list:
-        await context.bot.send_message(chat_id=chat_id, text="📊 Не найдено пользователей с заездами.")
+        await _send_message_with_thread(context, update, "📊 Не найдено пользователей с заездами.")
         return
 
     # Создаем клавиатуру
     keyboard = _build_keyboard([users_list[i:i+1] for i in range(len(users_list))])
-    await context.bot.send_message(chat_id=chat_id, text="👤 Выберите пользователя для просмотра статистики:", reply_markup=keyboard)
+    await _send_message_with_thread(context, update, "👤 Выберите пользователя для просмотра статистики:", reply_markup=keyboard)
 
 
 def main() -> None:
@@ -704,9 +747,9 @@ def main() -> None:
                 rows.append(nav_buttons)
             
             keyboard = _build_keyboard(rows)
-            await query.edit_message_text(text, reply_markup=keyboard, parse_mode='Markdown')
+            await _edit_message_with_thread(query, text, reply_markup=keyboard, parse_mode='Markdown')
         else:
-            await query.edit_message_text(f"📊 У пользователя ID:{user_id} нет сохранённых заездов.")
+            await _edit_message_with_thread(query, f"📊 У пользователя ID:{user_id} нет сохранённых заездов.")
 
     application.add_handler(CallbackQueryHandler(stats_user_callback, pattern=r"^stats_user_\d+(_\d+)?$"))
 
@@ -722,7 +765,7 @@ def main() -> None:
         competitors = get_best_competitors(20)
         
         if not competitors:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="🏆 Пока нет данных для рейтинга.")
+            await _send_message_with_thread(context, update, "🏆 Пока нет данных для рейтинга.")
             return
         
         text = "🏆 **РЕЙТИНГ ЛУЧШИХ ГОНЩИКОВ** 🏆\n"
@@ -759,7 +802,7 @@ def main() -> None:
         text += "```\n"
         text += "⏱️ Рейтинг по лучшему кругу"
         
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode='Markdown')
+        await _send_message_with_thread(context, update, text, parse_mode='Markdown')
 
     application.add_handler(CommandHandler("best", best_command))
     application.add_handler(MessageHandler(filters.Regex(r'^/best@\w+'), best_command))
@@ -779,7 +822,7 @@ def main() -> None:
         competitors = get_best_competitors_today(today, 20)
         
         if not competitors:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="🏆 Сегодня заездов не было.")
+            await _send_message_with_thread(context, update, "🏆 Сегодня заездов не было.")
             return
         
         text = f"🏆 **РЕЙТИНГ ЗА СЕГОДНЯ ({today})** 🏆\n"
@@ -816,7 +859,7 @@ def main() -> None:
         text += "```\n"
         text += "⏱️ Рейтинг по лучшему кругу за сегодня"
         
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode='Markdown')
+        await _send_message_with_thread(context, update, text, parse_mode='Markdown')
 
     application.add_handler(CommandHandler("best_today", best_today_command))
     application.add_handler(MessageHandler(filters.Regex(r'^/best_today@\w+'), best_today_command))
@@ -865,7 +908,7 @@ def main() -> None:
             [("🗑 Удалить", f"askdel_stats_{d}|{rn}|{cn}|{user_id}")],
             [("← Назад к статистике", f"stats_user_{user_id}")],
         ]
-        await query.edit_message_text(text, reply_markup=_build_keyboard(buttons), parse_mode='Markdown')
+        await _edit_message_with_thread(query, text, reply_markup=_build_keyboard(buttons), parse_mode='Markdown')
 
     application.add_handler(CallbackQueryHandler(view_stats_callback, pattern=r"^view_stats_"))
 
@@ -913,7 +956,7 @@ def main() -> None:
             )
 
         buttons = [[("🗑 Удалить", f"del_stats_{key}"), ("Отмена", f"cancel_stats_{key}")]]
-        await query.edit_message_text(confirm_text, reply_markup=_build_keyboard(buttons))
+        await _edit_message_with_thread(query, confirm_text, reply_markup=_build_keyboard(buttons))
 
     async def delete_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -927,9 +970,9 @@ def main() -> None:
             ok_competitor = delete_competitor(user_id, d, rn, cn)
             
             if ok_competitor:
-                await query.edit_message_text("✅ **ЗАПИСЬ УДАЛЕНА**\n\n🗑️ Заезд успешно удален из базы данных")
+                await _edit_message_with_thread(query, "✅ **ЗАПИСЬ УДАЛЕНА**\n\n🗑️ Заезд успешно удален из базы данных")
             else:
-                await query.edit_message_text("⚠️ **ЗАПИСЬ НЕ НАЙДЕНА**\n\n🔍 Возможно, запись уже была удалена ранее")
+                await _edit_message_with_thread(query, "⚠️ **ЗАПИСЬ НЕ НАЙДЕНА**\n\n🔍 Возможно, запись уже была удалена ранее")
                 
         except Exception as e:
             # Красивое отображение ошибки удаления
@@ -941,7 +984,7 @@ def main() -> None:
             else:
                 user_error = f"❌ **ОШИБКА УДАЛЕНИЯ**\n\n🔧 Техническая ошибка: {error_msg[:100]}\n💡 Попробуйте еще раз или обратитесь к администратору."
             
-            await query.edit_message_text(user_error)
+            await _edit_message_with_thread(query, user_error)
 
     async def cancel_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Отмена удаления в статистике - возвращаемся к просмотру заезда."""
@@ -987,7 +1030,7 @@ def main() -> None:
             [("🗑 Удалить", f"askdel_stats_{key}")],
             [("← Назад к статистике", f"stats_user_{user_id}")],
         ]
-        await query.edit_message_text(text, reply_markup=_build_keyboard(buttons), parse_mode='Markdown')
+        await _edit_message_with_thread(query, text, reply_markup=_build_keyboard(buttons), parse_mode='Markdown')
 
     application.add_handler(CallbackQueryHandler(ask_delete_stats_callback, pattern=r"^askdel_stats_"))
     application.add_handler(CallbackQueryHandler(delete_stats_callback, pattern=r"^del_stats_"))
