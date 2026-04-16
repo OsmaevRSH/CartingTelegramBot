@@ -1,0 +1,21 @@
+# Секреты
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# База данных и данные
+data/
+backups/
+*.db
+
+# Логи
+logs/
+
+# macOS
+.DS_Store
