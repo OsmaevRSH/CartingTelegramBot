@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from core.database.db import (
     get_user_competitors, get_competitor_by_key,
-    save_competitor, delete_competitor,
+    save_competitor, delete_competitor, get_all_users,
 )
 from core.models.models import LapData
 
@@ -51,6 +51,12 @@ def _row_to_dict(row: tuple) -> dict:
         "theor_lap_formatted", "display_name", "gap_to_leader", "lap_times_json",
     ]
     return dict(zip(keys, row))
+
+
+@router.get("/users")
+async def get_users():
+    """Возвращает всех пользователей с сохранёнными заездами."""
+    return get_all_users()
 
 
 @router.get("/stats/{user_id}")

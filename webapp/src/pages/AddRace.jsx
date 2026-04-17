@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
-import { fetchArchive, fetchRaceCarts, fetchFullRace, saveStats } from '../api/client.js'
+import { fetchArchive, fetchRaceCarts, fetchFullRace, saveStats, fetchUsers } from '../api/client.js'
 
+const STEP_USER = 'user'
 const STEP_DATE = 'date'
 const STEP_RACE = 'race'
 const STEP_CART = 'cart'
 const STEP_RESULT = 'result'
+
+const ALL_STEPS = [STEP_USER, STEP_DATE, STEP_RACE, STEP_CART, STEP_RESULT]
 
 function todayDDMMYYYY() {
   const d = new Date()
@@ -15,8 +18,14 @@ function todayDDMMYYYY() {
   return `${dd}.${mm}.${yyyy}`
 }
 
-export default function AddRace({ userId }) {
-  const [step, setStep] = useState(STEP_DATE)
+export default function AddRace({ userId, userName }) {
+  const [step, setStep] = useState(STEP_USER)
+
+  // Step 0: user selection
+  const [users, setUsers] = useState([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [targetUserId, setTargetUserId] = useState(userId)
+  const [targetUserName, setTargetUserName] = useState('Я')
 
   // Step 1: dates
   const [archive, setArchive] = useState([])
@@ -35,9 +44,18 @@ export default function AddRace({ userId }) {
 
   // Step 4: result
   const [saving, setSaving] = useState(false)
-  const [saveResult, setSaveResult] = useState(null) // { ok: bool, data?: any, error?: string }
+  const [saveResult, setSaveResult] = useState(null)
 
   const today = todayDDMMYYYY()
+
+  // Load users on mount
+  useEffect(() => {
+    setUsersLoading(true)
+    fetchUsers()
+      .then(data => setUsers(data || []))
+      .catch(() => setUsers([]))
+      .finally(() => setUsersLoading(false))
+  }, [])
 
   // Load archive on mount
   useEffect(() => {
@@ -62,10 +80,15 @@ export default function AddRace({ userId }) {
     const bIsToday = b.date === today
     if (aIsToday && !bIsToday) return -1
     if (!aIsToday && bIsToday) return 1
-    // Both not today: sort desc by date (DDMMYYYY → YYYYMMDD)
     const toSortable = (d) => d.substr(6, 4) + d.substr(3, 2) + d.substr(0, 2)
     return toSortable(b.date).localeCompare(toSortable(a.date))
   })
+
+  function handleSelectUser(uid, name) {
+    setTargetUserId(uid)
+    setTargetUserName(name)
+    setStep(STEP_DATE)
+  }
 
   function handleSelectDate(dayEntry) {
     setSelectedDay(dayEntry)
@@ -94,7 +117,7 @@ export default function AddRace({ userId }) {
 
   async function handleSelectCart(cart) {
     setSelectedCart(cart)
-    if (!userId && userId !== 0) {
+    if (!targetUserId && targetUserId !== 0) {
       setSaveResult({ ok: false, error: 'Нет Telegram-аккаунта. Откройте приложение через бота.' })
       setStep(STEP_RESULT)
       return
@@ -103,7 +126,6 @@ export default function AddRace({ userId }) {
     setStep(STEP_RESULT)
     setSaveResult(null)
     try {
-      // Fetch full info for this cart/race
       const fullRace = await fetchFullRace(selectedRace.href)
       const competitor = fullRace.find(
         (c) => String(c.num) === String(cart.number)
@@ -114,7 +136,7 @@ export default function AddRace({ userId }) {
       }
 
       const payload = {
-        user_id: userId,
+        user_id: targetUserId,
         date: selectedDay.date,
         race_number: selectedRace.number,
         race_href: selectedRace.href,
@@ -133,7 +155,7 @@ export default function AddRace({ userId }) {
         },
       }
 
-      const result = await saveStats(payload)
+      await saveStats(payload)
       setSaveResult({ ok: true, data: { ...competitor, date: selectedDay.date, race_number: selectedRace.number } })
     } catch (e) {
       setSaveResult({ ok: false, error: e.message })
@@ -143,7 +165,9 @@ export default function AddRace({ userId }) {
   }
 
   function handleReset() {
-    setStep(STEP_DATE)
+    setStep(STEP_USER)
+    setTargetUserId(userId)
+    setTargetUserName('Я')
     setSelectedDay(null)
     setSelectedRace(null)
     setCarts([])
@@ -153,7 +177,10 @@ export default function AddRace({ userId }) {
   }
 
   function handleBack() {
-    if (step === STEP_RACE) {
+    if (step === STEP_DATE) {
+      setStep(STEP_USER)
+      setSelectedDay(null)
+    } else if (step === STEP_RACE) {
       setStep(STEP_DATE)
       setSelectedDay(null)
     } else if (step === STEP_CART) {
@@ -166,12 +193,16 @@ export default function AddRace({ userId }) {
     }
   }
 
-  // Find best lap cart for highlight
   const bestLapCart = carts.reduce((best, c) => {
     if (!c.best_lap) return best
     if (!best) return c
     return c.best_lap < best.best_lap ? c : best
   }, null)
+
+  const stepIndex = ALL_STEPS.indexOf(step)
+
+  // Other users (exclude current user)
+  const otherUsers = users.filter(u => u.user_id !== userId)
 
   return (
     <div className="flex flex-col h-full">
@@ -179,26 +210,28 @@ export default function AddRace({ userId }) {
       <div className="px-4 pt-5 pb-3">
         {/* Step breadcrumb */}
         <div className="flex items-center gap-2 mb-3">
-          {[STEP_DATE, STEP_RACE, STEP_CART, STEP_RESULT].map((s, i) => (
+          {ALL_STEPS.map((s, i) => (
             <div key={s} className="flex items-center gap-2">
               <div
                 className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                   s === step
                     ? 'bg-[#00FF7F] text-black'
-                    : [STEP_DATE, STEP_RACE, STEP_CART, STEP_RESULT].indexOf(step) > i
+                    : stepIndex > i
                     ? 'bg-[#004d26] text-[#00FF7F] text-[10px]'
                     : 'bg-[#1e1e1e] text-[#555]'
                 }`}
               >
-                {[STEP_DATE, STEP_RACE, STEP_CART, STEP_RESULT].indexOf(step) > i ? '✓' : i + 1}
+                {stepIndex > i ? '✓' : i + 1}
               </div>
-              {i < 3 && <div className={`w-4 h-px ${[STEP_DATE, STEP_RACE, STEP_CART, STEP_RESULT].indexOf(step) > i ? 'bg-[#004d26]' : 'bg-[#1e1e1e]'}`} />}
+              {i < ALL_STEPS.length - 1 && (
+                <div className={`w-4 h-px ${stepIndex > i ? 'bg-[#004d26]' : 'bg-[#1e1e1e]'}`} />
+              )}
             </div>
           ))}
         </div>
 
         <div className="flex items-center gap-3">
-          {step !== STEP_DATE && (
+          {step !== STEP_USER && (
             <button
               onClick={handleBack}
               disabled={saving}
@@ -212,7 +245,8 @@ export default function AddRace({ userId }) {
           <div>
             <h1 className="text-lg font-bold text-white">Добавить заезд</h1>
             <p className="text-[#888888] text-xs mt-0.5">
-              {step === STEP_DATE && 'Выберите дату'}
+              {step === STEP_USER && 'Выберите гонщика'}
+              {step === STEP_DATE && (targetUserId !== userId ? `Для: ${targetUserName} — выберите дату` : 'Выберите дату')}
               {step === STEP_RACE && `${selectedDay?.date} — выберите заезд`}
               {step === STEP_CART && `Заезд ${selectedRace?.number} — выберите карт`}
               {step === STEP_RESULT && 'Результат'}
@@ -223,6 +257,72 @@ export default function AddRace({ userId }) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 pb-4 tab-content">
+
+        {/* Step 0: User selection */}
+        {step === STEP_USER && (
+          <div className="space-y-2">
+            {usersLoading && (
+              <div className="flex justify-center py-8">
+                <LoadingSpinner size="md" label="Загрузка..." />
+              </div>
+            )}
+            {!usersLoading && (
+              <>
+                {/* Current user */}
+                <button
+                  onClick={() => handleSelectUser(userId, userName || 'Я')}
+                  className="w-full text-left px-4 py-3.5 rounded-xl border border-[#00FF7F33] bg-[#001a0d] transition-all duration-150 active:scale-[0.98]"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-[#00FF7F20] flex items-center justify-center text-[#00FF7F] text-sm font-bold">
+                        Я
+                      </div>
+                      <div>
+                        <div className="text-[#00FF7F] font-semibold text-sm">
+                          {userName || 'Я'}
+                        </div>
+                        <div className="text-[#888] text-xs mt-0.5">Себе</div>
+                      </div>
+                    </div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00FF7F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                  </div>
+                </button>
+
+                {/* Other users */}
+                {otherUsers.map((u) => (
+                  <button
+                    key={u.user_id}
+                    onClick={() => handleSelectUser(u.user_id, u.display_name)}
+                    className="w-full text-left px-4 py-3.5 rounded-xl border border-[#222222] bg-[#141414] transition-all duration-150 active:scale-[0.98]"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-[#1e1e1e] flex items-center justify-center text-[#888] text-sm font-bold">
+                          {u.display_name?.[0]?.toUpperCase() || '?'}
+                        </div>
+                        <div className="text-white font-medium text-sm">
+                          {u.display_name}
+                        </div>
+                      </div>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 18 15 12 9 6"/>
+                      </svg>
+                    </div>
+                  </button>
+                ))}
+
+                {otherUsers.length === 0 && (
+                  <p className="text-center text-[#555] text-xs pt-2">
+                    Другие гонщики появятся здесь после первого заезда
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {/* Step 1: Date list */}
         {step === STEP_DATE && (
@@ -381,7 +481,6 @@ export default function AddRace({ userId }) {
 
             {!saving && saveResult?.ok && (
               <div className="w-full">
-                {/* Success icon */}
                 <div className="flex justify-center mb-6">
                   <div className="w-20 h-20 rounded-full bg-[#001a0d] border-2 border-[#00FF7F] flex items-center justify-center">
                     <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#00FF7F" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -391,9 +490,12 @@ export default function AddRace({ userId }) {
                 </div>
 
                 <h2 className="text-center text-xl font-bold text-white mb-1">Сохранено!</h2>
-                <p className="text-center text-[#888888] text-sm mb-6">Результат успешно добавлен</p>
+                <p className="text-center text-[#888888] text-sm mb-1">Результат успешно добавлен</p>
+                {targetUserId !== userId && (
+                  <p className="text-center text-[#00FF7F] text-xs mb-5">для {targetUserName}</p>
+                )}
+                {targetUserId === userId && <div className="mb-5" />}
 
-                {/* Result card */}
                 {saveResult.data && (
                   <div className="bg-[#141414] border border-[#222222] rounded-xl p-4 mb-6">
                     <div className="grid grid-cols-2 gap-3">
@@ -418,7 +520,6 @@ export default function AddRace({ userId }) {
 
             {!saving && saveResult && !saveResult.ok && (
               <div className="w-full">
-                {/* Error icon */}
                 <div className="flex justify-center mb-6">
                   <div className="w-20 h-20 rounded-full bg-[#1a0000] border-2 border-[#FF4444] flex items-center justify-center">
                     <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#FF4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

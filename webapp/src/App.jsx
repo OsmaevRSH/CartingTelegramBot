@@ -43,7 +43,7 @@ export default function App() {
       <div className="flex-1 overflow-hidden" style={{ paddingBottom: '64px' }}>
         {activeTab === 'add' && (
           <div className="h-full overflow-hidden flex flex-col tab-content">
-            <AddRace userId={userId} />
+            <AddRace userId={userId} userName={userName} />
           </div>
         )}
         {activeTab === 'stats' && (

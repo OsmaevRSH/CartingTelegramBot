@@ -72,6 +72,11 @@ export function deleteStats(userId, date, raceNumber, num) {
   )
 }
 
+// All users with saved races
+export function fetchUsers() {
+  return request('/users')
+}
+
 // Leaderboard (all time)
 export function fetchLeaderboard() {
   return request('/leaderboard')

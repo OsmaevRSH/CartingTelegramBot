@@ -225,6 +225,32 @@ def _time_string_to_ms(time_str: str) -> int:
         return 999999999
 
 
+def get_all_users():
+    """Return list of {user_id, display_name} for all users with saved races."""
+    with _get_conn() as conn:
+        cur = conn.execute(
+            """
+            SELECT user_id, name, display_name
+            FROM user_competitors
+            GROUP BY user_id
+            ORDER BY MAX(substr(date,7,4) || substr(date,4,2) || substr(date,1,2)) DESC
+            """
+        )
+        rows = cur.fetchall()
+
+    result = []
+    for user_id, name, display_name in rows:
+        if name and name.strip() and not (display_name or '').startswith('Карт #'):
+            label = name.strip()
+        elif display_name and display_name.strip():
+            label = display_name.strip()
+        else:
+            label = f'ID:{user_id}'
+        result.append({'user_id': user_id, 'display_name': label})
+
+    return result
+
+
 def get_best_competitors(limit: int = 20):
     """Get one best-lap row per user, sorted by best_lap_ms ASC."""
     with _get_conn() as conn:
