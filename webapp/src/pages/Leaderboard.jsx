@@ -170,7 +170,7 @@ export default function Leaderboard({ userId }) {
                 const rank = idx + 1
                 const isCurrentUser = userId !== null && userId !== undefined &&
                   String(entry.user_id) === String(userId)
-                const displayName = entry.display_name || `Карт #${entry.num}`
+                const displayName = getDisplayName(entry)
 
                 return (
                   <div
@@ -207,9 +207,9 @@ export default function Leaderboard({ userId }) {
                     {/* Best lap */}
                     <div className="shrink-0 text-right">
                       <div className="text-[#00FF7F] lap-time text-sm font-medium">
-                        {entry.theor_lap_formatted || entry.best_lap || '—'}
+                        {entry.best_lap || '—'}
                       </div>
-                      <div className="text-[#555] text-xs">теор.</div>
+                      <div className="text-[#555] text-xs">лучший</div>
                     </div>
                   </div>
                 )
@@ -220,6 +220,16 @@ export default function Leaderboard({ userId }) {
       </div>
     </div>
   )
+}
+
+function getDisplayName(entry) {
+  if (entry.name && entry.name.trim() && !(entry.display_name || '').startsWith('Карт #')) {
+    return entry.name.trim()
+  }
+  if (entry.display_name && !entry.display_name.startsWith('Карт #')) {
+    return entry.display_name
+  }
+  return `К#${entry.num}`
 }
 
 function PodiumRow({ entries, userId }) {
@@ -236,7 +246,7 @@ function PodiumRow({ entries, userId }) {
         const height = heights[i]
         const isCurrentUser = userId !== null && userId !== undefined &&
           String(entry.user_id) === String(userId)
-        const displayName = entry.display_name || `К#${entry.num}`
+        const displayName = getDisplayName(entry)
 
         return (
           <div key={i} className="flex flex-col items-center gap-1.5 flex-1">
@@ -248,7 +258,7 @@ function PodiumRow({ entries, userId }) {
             </div>
             {/* Lap */}
             <div className="text-[#00FF7F] lap-time text-xs">
-              {entry.theor_lap_formatted || entry.best_lap || '—'}
+              {entry.best_lap || '—'}
             </div>
             {/* Podium block */}
             <div
