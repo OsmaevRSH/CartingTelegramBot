@@ -397,10 +397,7 @@ export default function AddRace({ userId, userName }) {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-white font-medium text-sm">
-                      Заезд {race.number}
-                    </div>
-                    <div className="text-[#888888] text-xs mt-0.5 font-mono truncate max-w-[200px]">
-                      {race.href}
+                      {race.number}
                     </div>
                   </div>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
