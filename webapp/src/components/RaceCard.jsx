@@ -16,7 +16,7 @@ function PositionBadge({ pos }) {
   )
 }
 
-export default function RaceCard({ race, onDelete }) {
+export default function RaceCard({ race, onDelete, onCompare }) {
   const [expanded, setExpanded] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -30,18 +30,13 @@ export default function RaceCard({ race, onDelete }) {
     }
   } catch (_) {}
 
+  const hasLaps = lapTimes.filter(l => l.lap_number !== 0).length > 0
+
   async function handleDelete() {
-    if (!confirmDelete) {
-      setConfirmDelete(true)
-      return
-    }
+    if (!confirmDelete) { setConfirmDelete(true); return }
     setDeleting(true)
-    try {
-      await onDelete(race)
-    } finally {
-      setDeleting(false)
-      setConfirmDelete(false)
-    }
+    try { await onDelete(race) }
+    finally { setDeleting(false); setConfirmDelete(false) }
   }
 
   const isP1 = parseInt(race.pos) === 1
@@ -54,12 +49,8 @@ export default function RaceCard({ race, onDelete }) {
       {/* Header row */}
       <button
         className="w-full text-left px-4 py-3 flex items-center gap-3"
-        onClick={() => {
-          setExpanded(e => !e)
-          setConfirmDelete(false)
-        }}
+        onClick={() => { setExpanded(e => !e); setConfirmDelete(false) }}
       >
-        {/* Date + race */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[#ebbbb4] text-[10px] lap-time uppercase tracking-widest">{race.date}</span>
@@ -67,31 +58,20 @@ export default function RaceCard({ race, onDelete }) {
             <span className="text-[#ebbbb4] text-[10px] uppercase tracking-widest">{race.race_number}</span>
           </div>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[#e5e2e1] text-sm font-bold tracking-tight">
-              Карт #{race.num}
-            </span>
+            <span className="text-[#e5e2e1] text-sm font-bold tracking-tight">Карт #{race.num}</span>
             {race.display_name && !race.display_name.startsWith('Карт #') && race.display_name !== race.num?.toString() && (
-              <span className="text-[#454747] text-xs truncate">
-                {race.display_name}
-              </span>
+              <span className="text-[#454747] text-xs truncate">{race.display_name}</span>
             )}
           </div>
         </div>
 
-        {/* Best lap */}
         <div className="text-right shrink-0">
-          <div className="text-[#ffb4a8] lap-time text-sm font-bold">
-            {race.best_lap || '—'}
-          </div>
+          <div className="text-[#ffb4a8] lap-time text-sm font-bold">{race.best_lap || '—'}</div>
           <div className="text-[#454747] text-[9px] uppercase tracking-widest mt-0.5">лучший</div>
         </div>
 
-        {/* Position */}
-        <div className="shrink-0">
-          <PositionBadge pos={race.pos} />
-        </div>
+        <div className="shrink-0"><PositionBadge pos={race.pos} /></div>
 
-        {/* Chevron */}
         <div className={`shrink-0 text-[#353534] transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="square" strokeLinejoin="miter"/>
@@ -117,10 +97,21 @@ export default function RaceCard({ race, onDelete }) {
           )}
 
           {/* Lap times */}
-          {lapTimes.length > 0 && (
+          {hasLaps && (
             <div className="mt-3">
-              <div className="text-[9px] text-[#454747] mb-2 uppercase tracking-widest">
-                Телеметрия кругов
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[9px] text-[#454747] uppercase tracking-widest">Телеметрия кругов</div>
+                {onCompare && (
+                  <button
+                    onClick={() => onCompare(race, lapTimes)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-[#1c1b1b] text-[#ebbbb4] text-[9px] font-bold uppercase tracking-widest hover:bg-[#ff5540] hover:text-white transition-colors"
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square">
+                      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                    </svg>
+                    Сравнить
+                  </button>
+                )}
               </div>
               <LapTimesTable lapTimes={lapTimes} />
             </div>
@@ -131,25 +122,15 @@ export default function RaceCard({ race, onDelete }) {
             {confirmDelete ? (
               <div className="flex items-center gap-2">
                 <span className="text-[#ebbbb4] text-xs uppercase tracking-widest">Удалить?</span>
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="px-3 py-1.5 bg-[#1c1b1b] text-[#ebbbb4] text-xs uppercase tracking-wider"
-                >
+                <button onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 bg-[#1c1b1b] text-[#ebbbb4] text-xs uppercase tracking-wider">
                   Отмена
                 </button>
-                <button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="px-3 py-1.5 bg-[#FF4444] text-white text-xs font-bold uppercase tracking-wider disabled:opacity-50"
-                >
+                <button onClick={handleDelete} disabled={deleting} className="px-3 py-1.5 bg-[#FF4444] text-white text-xs font-bold uppercase tracking-wider disabled:opacity-50">
                   {deleting ? '...' : 'Удалить'}
                 </button>
               </div>
             ) : (
-              <button
-                onClick={handleDelete}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[#FF4444] text-xs uppercase tracking-wider hover:bg-[#1a0000] transition-colors"
-              >
+              <button onClick={handleDelete} className="flex items-center gap-1.5 px-3 py-1.5 text-[#FF4444] text-xs uppercase tracking-wider hover:bg-[#1a0000] transition-colors">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter">
                   <polyline points="3 6 5 6 21 6"/>
                   <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
@@ -170,11 +151,10 @@ function StatItem({ label, value, highlight, mono }) {
   const valClass = [
     'text-sm font-bold tracking-tight',
     mono ? 'lap-time' : '',
-    highlight === 'accent' ? 'text-[#ff5540]' :
+    highlight === 'accent'  ? 'text-[#ff5540]' :
     highlight === 'primary' ? 'text-[#ffb4a8]' :
     'text-[#e5e2e1]',
   ].join(' ')
-
   return (
     <div className="bg-[#1c1b1b] px-2.5 py-2 text-center">
       <div className={valClass}>{value ?? '—'}</div>

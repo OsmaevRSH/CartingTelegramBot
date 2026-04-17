@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from 'react'
 import RaceCard from '../components/RaceCard.jsx'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import AddRace from './AddRace.jsx'
+import CompareScreen from './CompareScreen.jsx'
 import { fetchStats, deleteStats, fetchUsers } from '../api/client.js'
 
 export default function MyStats({ userId, userName }) {
   const [isAdding, setIsAdding] = useState(false)
   const [addTarget, setAddTarget] = useState(null)
   const [pickingUser, setPickingUser] = useState(false)
+  const [comparing, setComparing] = useState(null) // { race, lapTimes }
   const [users, setUsers] = useState([])
   const [selectedId, setSelectedId] = useState(userId)
   const [selectedName, setSelectedName] = useState('Я')
@@ -88,6 +90,17 @@ export default function MyStats({ userId, userName }) {
         targetUserId={addTarget?.uid ?? userId}
         targetUserName={addTarget?.name ?? userName}
         onDone={handleAddDone}
+      />
+    )
+  }
+
+  if (comparing) {
+    return (
+      <CompareScreen
+        myRace={comparing.race}
+        myLaps={comparing.lapTimes}
+        myName={userName || 'Я'}
+        onClose={() => setComparing(null)}
       />
     )
   }
@@ -287,6 +300,7 @@ export default function MyStats({ userId, userName }) {
                 key={`${race.date}-${race.race_number}-${race.num}-${idx}`}
                 race={race}
                 onDelete={handleDelete}
+                onCompare={(r, laps) => setComparing({ race: r, lapTimes: laps })}
               />
             ))}
           </div>
