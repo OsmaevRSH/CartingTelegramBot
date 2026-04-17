@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import { fetchLeaderboard, fetchLeaderboardToday, fetchKartsToday } from '../api/client.js'
 
@@ -36,13 +36,20 @@ function getDisplayName(entry) {
   return `К#${entry.num}`
 }
 
-export default function Leaderboard({ userId }) {
+export default function Leaderboard({ userId, resetSignal }) {
   const [segment, setSegment] = useState(SEG_ALL)
   const [allData, setAllData] = useState([])
   const [todayData, setTodayData] = useState([])
   const [kartsData, setKartsData] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+
+  const scrollRef = useRef(null)
+
+  useEffect(() => {
+    if (!resetSignal) return
+    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [resetSignal])
 
   const loadAll = useCallback(async () => {
     setLoading(true); setError(null)
@@ -126,7 +133,7 @@ export default function Leaderboard({ userId }) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4 tab-content">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-4 tab-content">
         {loading && (
           <div className="flex justify-center py-16">
             <LoadingSpinner size="lg" label="Загрузка..." />

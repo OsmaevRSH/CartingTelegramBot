@@ -7,6 +7,8 @@ import Leaderboard from './pages/Leaderboard.jsx'
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('stats')
+  const [statsReset, setStatsReset] = useState(0)
+  const [lbReset, setLbReset] = useState(0)
   const { userId, userName, userUsername, userPhotoUrl, isDevMode } = useTelegram()
 
   useEffect(() => {
@@ -15,6 +17,16 @@ export default function App() {
       registerUser(userId, userName, userUsername, userPhotoUrl).catch(() => {})
     }
   }, [userId, userName, userUsername, userPhotoUrl])
+
+  function handleTabPress(tabId) {
+    if (tabId === activeTab) {
+      // Tap on active tab — signal the page to pop to root or scroll to top
+      if (tabId === 'stats') setStatsReset(n => n + 1)
+      else setLbReset(n => n + 1)
+    } else {
+      setActiveTab(tabId)
+    }
+  }
 
   return (
     <div
@@ -39,22 +51,18 @@ export default function App() {
         </div>
       )}
 
-      {/* Page content */}
+      {/* Page content — both tabs stay mounted to preserve scroll position */}
       <div className="flex-1 overflow-hidden" style={{ paddingBottom: '64px' }}>
-        {activeTab === 'stats' && (
-          <div className="h-full overflow-hidden flex flex-col tab-content">
-            <MyStats userId={userId} userName={userName} />
-          </div>
-        )}
-        {activeTab === 'leaderboard' && (
-          <div className="h-full overflow-hidden flex flex-col tab-content">
-            <Leaderboard userId={userId} />
-          </div>
-        )}
+        <div className={`h-full overflow-hidden flex flex-col ${activeTab === 'stats' ? '' : 'hidden'}`}>
+          <MyStats userId={userId} userName={userName} resetSignal={statsReset} />
+        </div>
+        <div className={`h-full overflow-hidden flex flex-col ${activeTab === 'leaderboard' ? '' : 'hidden'}`}>
+          <Leaderboard userId={userId} resetSignal={lbReset} />
+        </div>
       </div>
 
       {/* Bottom navigation */}
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <BottomNav activeTab={activeTab} onTabChange={handleTabPress} />
     </div>
   )
 }

@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import RaceCard from '../components/RaceCard.jsx'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import AddRace from './AddRace.jsx'
 import CompareScreen from './CompareScreen.jsx'
 import { fetchStats, deleteStats, fetchUsers } from '../api/client.js'
 
-export default function MyStats({ userId, userName }) {
+export default function MyStats({ userId, userName, resetSignal }) {
   const [isAdding, setIsAdding] = useState(false)
   const [addTarget, setAddTarget] = useState(null)
   const [pickingUser, setPickingUser] = useState(false)
@@ -17,6 +17,21 @@ export default function MyStats({ userId, userName }) {
   const [races, setRaces] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+
+  const scrollRef = useRef(null)
+
+  // Tap on active tab — pop to root or scroll to top
+  useEffect(() => {
+    if (!resetSignal) return
+    if (isAdding || comparing || pickingUser) {
+      setIsAdding(false)
+      setComparing(null)
+      setPickingUser(false)
+      setAddTarget(null)
+    } else {
+      scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }, [resetSignal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetchUsers()
@@ -244,7 +259,7 @@ export default function MyStats({ userId, userName }) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4 tab-content">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-4 tab-content">
         {loading && (
           <div className="flex justify-center py-16">
             <LoadingSpinner size="lg" label="Загрузка заездов..." />
