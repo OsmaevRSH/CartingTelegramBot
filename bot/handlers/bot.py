@@ -1,7 +1,11 @@
 import html
 import logging
 from datetime import date
-from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, WebAppInfo
+from telegram import (
+    Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup,
+    MenuButtonWebApp, WebAppInfo,
+    BotCommandScopeDefault, BotCommandScopeAllGroupChats, BotCommandScopeAllChatAdministrators,
+)
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application, CommandHandler, ContextTypes,
@@ -872,13 +876,17 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def _set_default_commands(app: Application) -> None:
     """Устанавливаем команды бота и кнопку Menu для WebApp."""
-    await app.bot.set_my_commands([
+    commands = [
         BotCommand("add", "Добавить заезд"),
         BotCommand("stats", "Статистика пользователя"),
         BotCommand("best", "Рейтинг гонщиков"),
         BotCommand("best_today", "Рейтинг за сегодня"),
         BotCommand("app", "Открыть Mini App"),
-    ])
+    ]
+    # Устанавливаем команды для всех контекстов
+    await app.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+    await app.bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
+    await app.bot.set_my_commands(commands, scope=BotCommandScopeAllChatAdministrators())
     await app.bot.set_chat_menu_button(
         menu_button=MenuButtonWebApp(
             text="Mini App",
