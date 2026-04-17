@@ -48,7 +48,7 @@ export default function App() {
         )}
         {activeTab === 'stats' && (
           <div className="h-full overflow-hidden flex flex-col tab-content">
-            <MyStats userId={userId} />
+            <MyStats userId={userId} userName={userName} />
           </div>
         )}
         {activeTab === 'leaderboard' && (

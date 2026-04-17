@@ -1,20 +1,35 @@
 import { useState, useEffect, useCallback } from 'react'
 import RaceCard from '../components/RaceCard.jsx'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
-import { fetchStats, deleteStats } from '../api/client.js'
+import { fetchStats, deleteStats, fetchUsers } from '../api/client.js'
 
-export default function MyStats({ userId }) {
+export default function MyStats({ userId, userName }) {
+  const [users, setUsers] = useState([])
+  const [selectedId, setSelectedId] = useState(userId)
+  const [selectedName, setSelectedName] = useState('Я')
+
   const [races, setRaces] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const load = useCallback(async () => {
-    if (userId === null || userId === undefined) return
+  // Load pilots list on mount
+  useEffect(() => {
+    fetchUsers()
+      .then(data => setUsers(data || []))
+      .catch(() => setUsers([]))
+  }, [])
+
+  // Sync selectedId when userId changes (on first load)
+  useEffect(() => {
+    setSelectedId(userId)
+  }, [userId])
+
+  const load = useCallback(async (uid) => {
+    if (uid === null || uid === undefined) return
     setLoading(true)
     setError(null)
     try {
-      const data = await fetchStats(userId)
-      // Sort by date descending
+      const data = await fetchStats(uid)
       const sorted = (data || []).sort((a, b) => {
         const toSortable = (d) => d.substr(6, 4) + d.substr(3, 2) + d.substr(0, 2)
         return toSortable(b.date).localeCompare(toSortable(a.date))
@@ -25,21 +40,26 @@ export default function MyStats({ userId }) {
     } finally {
       setLoading(false)
     }
-  }, [userId])
+  }, [])
 
   useEffect(() => {
-    load()
-  }, [load])
+    load(selectedId)
+  }, [selectedId, load])
+
+  function handleSelectPilot(uid, name) {
+    setSelectedId(uid)
+    setSelectedName(name)
+    setRaces([])
+  }
 
   async function handleDelete(race) {
     try {
-      await deleteStats(userId, race.date, race.race_number, race.num)
+      await deleteStats(selectedId, race.date, race.race_number, race.num)
       setRaces(prev =>
-        prev.filter(
-          (r) =>
-            !(r.date === race.date &&
-              r.race_number === race.race_number &&
-              String(r.num) === String(race.num))
+        prev.filter(r =>
+          !(r.date === race.date &&
+            r.race_number === race.race_number &&
+            String(r.num) === String(race.num))
         )
       )
     } catch (e) {
@@ -47,13 +67,19 @@ export default function MyStats({ userId }) {
     }
   }
 
+  const isMyself = String(selectedId) === String(userId)
+  const headerName = isMyself ? 'Мои заезды' : `Заезды — ${selectedName}`
+
+  // Other pilots (exclude current user)
+  const otherPilots = users.filter(u => String(u.user_id) !== String(userId))
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-4 pt-5 pb-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-3">
           <div>
-            <h1 className="text-lg font-bold text-white">Мои заезды</h1>
+            <h1 className="text-lg font-bold text-white">{headerName}</h1>
             {!loading && races.length > 0 && (
               <p className="text-[#888888] text-xs mt-0.5">
                 {races.length} {pluralRaces(races.length)}
@@ -61,19 +87,13 @@ export default function MyStats({ userId }) {
             )}
           </div>
           <button
-            onClick={load}
+            onClick={() => load(selectedId)}
             disabled={loading}
             className="p-2 rounded-lg bg-[#1e1e1e] text-[#888] disabled:opacity-50 transition-colors"
           >
             <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
               className={loading ? 'animate-spin' : ''}
             >
               <path d="M23 4v6h-6"/>
@@ -81,6 +101,42 @@ export default function MyStats({ userId }) {
             </svg>
           </button>
         </div>
+
+        {/* Pilot selector */}
+        {(otherPilots.length > 0) && (
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            {/* Я */}
+            <button
+              onClick={() => handleSelectPilot(userId, userName || 'Я')}
+              className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                isMyself
+                  ? 'bg-[#00FF7F] text-black'
+                  : 'bg-[#1e1e1e] text-[#888] border border-[#333]'
+              }`}
+            >
+              <span>Я</span>
+              {userName && <span className="opacity-70">{userName}</span>}
+            </button>
+
+            {/* Other pilots */}
+            {otherPilots.map(u => {
+              const isSelected = String(selectedId) === String(u.user_id)
+              return (
+                <button
+                  key={u.user_id}
+                  onClick={() => handleSelectPilot(u.user_id, u.display_name)}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                    isSelected
+                      ? 'bg-[#00FF7F] text-black'
+                      : 'bg-[#1e1e1e] text-[#888] border border-[#333]'
+                  }`}
+                >
+                  {u.display_name}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* Content */}
@@ -100,14 +156,14 @@ export default function MyStats({ userId }) {
             </svg>
             <div>
               <p className="text-[#FF4444] text-sm">{error}</p>
-              <button onClick={load} className="text-xs text-[#888] underline mt-1">
+              <button onClick={() => load(selectedId)} className="text-xs text-[#888] underline mt-1">
                 Повторить
               </button>
             </div>
           </div>
         )}
 
-        {!loading && !error && userId === null && (
+        {!loading && !error && selectedId === null && (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <div className="text-4xl">🔒</div>
             <p className="text-[#888888] text-sm text-center">
@@ -116,12 +172,14 @@ export default function MyStats({ userId }) {
           </div>
         )}
 
-        {!loading && !error && userId !== null && races.length === 0 && (
+        {!loading && !error && selectedId !== null && races.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <div className="text-5xl">🏁</div>
             <p className="text-white font-medium">Заездов пока нет</p>
             <p className="text-[#888888] text-sm text-center">
-              Добавьте свой первый заезд через вкладку «Добавить»
+              {isMyself
+                ? 'Добавьте свой первый заезд через вкладку «Добавить»'
+                : `У ${selectedName} нет сохранённых заездов`}
             </p>
           </div>
         )}
