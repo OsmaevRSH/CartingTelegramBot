@@ -298,6 +298,34 @@ def get_all_users():
     return result
 
 
+def get_best_karts_today(today_date: str):
+    """Рейтинг картов за день: лучший круг каждого карта, сортировка по возрастанию."""
+    with _get_conn() as conn:
+        cur = conn.execute(
+            """
+            WITH best_per_kart AS (
+                SELECT num, MIN(best_lap_ms) AS min_ms
+                FROM user_competitors
+                WHERE date = ? AND best_lap_ms IS NOT NULL AND best_lap_ms > 0
+                GROUP BY num
+            )
+            SELECT uc.num, uc.best_lap, bpk.min_ms,
+                   COUNT(DISTINCT uc.user_id) AS drivers,
+                   COALESCE(up.telegram_name, uc.name, '') AS best_driver,
+                   COALESCE(up.photo_url, '') AS best_driver_photo
+            FROM user_competitors uc
+            INNER JOIN best_per_kart bpk
+                ON uc.num = bpk.num AND uc.best_lap_ms = bpk.min_ms
+            LEFT JOIN user_profiles up ON up.user_id = uc.user_id
+            WHERE uc.date = ?
+            GROUP BY uc.num
+            ORDER BY bpk.min_ms ASC
+            """,
+            (today_date, today_date),
+        )
+        return cur.fetchall()
+
+
 def _time_string_to_ms(time_str: str) -> int:
     """Преобразует строку времени 'M:SS.sss' в миллисекунды."""
     if not time_str or time_str == "-":
@@ -326,7 +354,8 @@ def get_best_competitors(limit: int = 20):
             )
             SELECT uc.user_id, uc.date, uc.race_number, uc.num, uc.name, uc.display_name,
                    uc.theor_lap, uc.theor_lap_formatted, uc.best_lap, uc.pos,
-                   COALESCE(up.telegram_name, '') as telegram_name
+                   COALESCE(up.telegram_name, '') as telegram_name,
+                   COALESCE(up.photo_url, '') as photo_url
             FROM user_competitors uc
             INNER JOIN best_per_user bpu
                 ON uc.user_id = bpu.user_id AND uc.best_lap_ms = bpu.min_ms
@@ -353,7 +382,8 @@ def get_best_competitors_today(today_date: str, limit: int = 20):
             )
             SELECT uc.user_id, uc.date, uc.race_number, uc.num, uc.name, uc.display_name,
                    uc.theor_lap, uc.theor_lap_formatted, uc.best_lap, uc.pos,
-                   COALESCE(up.telegram_name, '') as telegram_name
+                   COALESCE(up.telegram_name, '') as telegram_name,
+                   COALESCE(up.photo_url, '') as photo_url
             FROM user_competitors uc
             INNER JOIN best_per_user bpu
                 ON uc.user_id = bpu.user_id AND uc.best_lap_ms = bpu.min_ms

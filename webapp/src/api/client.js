@@ -100,3 +100,8 @@ export function fetchLeaderboard() {
 export function fetchLeaderboardToday(date) {
   return request(`/leaderboard/today?date=${encodeURIComponent(date)}`)
 }
+
+// Best karts today
+export function fetchKartsToday(date) {
+  return request(`/karts/today?date=${encodeURIComponent(date)}`)
+}

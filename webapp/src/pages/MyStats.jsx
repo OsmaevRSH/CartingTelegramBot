@@ -6,6 +6,8 @@ import { fetchStats, deleteStats, fetchUsers } from '../api/client.js'
 
 export default function MyStats({ userId, userName }) {
   const [isAdding, setIsAdding] = useState(false)
+  const [addTarget, setAddTarget] = useState(null) // { uid, name } or null = self
+  const [pickingUser, setPickingUser] = useState(false)
   const [users, setUsers] = useState([])
   const [selectedId, setSelectedId] = useState(userId)
   const [selectedName, setSelectedName] = useState('Я')
@@ -78,12 +80,60 @@ export default function MyStats({ userId, userName }) {
 
   function handleAddDone() {
     setIsAdding(false)
+    setAddTarget(null)
     load(selectedId)
   }
 
   if (isAdding) {
     return (
-      <AddRace userId={userId} userName={userName} onDone={handleAddDone} />
+      <AddRace
+        userId={userId}
+        userName={userName}
+        targetUserId={addTarget?.uid ?? userId}
+        targetUserName={addTarget?.name ?? userName}
+        onDone={handleAddDone}
+      />
+    )
+  }
+
+  if (pickingUser) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="px-4 pt-5 pb-3">
+          <div className="flex items-center gap-3 mb-4">
+            <button
+              onClick={() => setPickingUser(false)}
+              className="p-2 rounded-lg bg-[#1e1e1e] text-[#888]"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+            <div>
+              <h1 className="text-lg font-bold text-white">Добавить другому</h1>
+              <p className="text-[#888] text-xs mt-0.5">Выберите гонщика</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2">
+          {otherPilots.map(u => (
+            <button
+              key={u.user_id}
+              onClick={() => {
+                setAddTarget({ uid: u.user_id, name: u.display_name })
+                setPickingUser(false)
+                setIsAdding(true)
+              }}
+              className="w-full text-left px-4 py-3.5 rounded-xl border border-[#222] bg-[#141414] transition-all active:scale-[0.98]"
+            >
+              <div className="flex items-center gap-3">
+                <Avatar name={u.display_name} photoUrl={u.photo_url} size={36} active={false} />
+                <span className="text-white font-medium text-sm">{u.display_name}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
     )
   }
 
@@ -101,9 +151,26 @@ export default function MyStats({ userId, userName }) {
             )}
           </div>
           <div className="flex items-center gap-2">
+          {/* Add for another person */}
+          {otherPilots.length > 0 && (
+            <button
+              onClick={() => setPickingUser(true)}
+              className="p-2 rounded-lg bg-[#1e1e1e] text-[#888] transition-colors"
+              title="Добавить другому"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <line x1="19" y1="8" x2="19" y2="14"/>
+                <line x1="22" y1="11" x2="16" y2="11"/>
+              </svg>
+            </button>
+          )}
+          {/* Add for self */}
           <button
-            onClick={() => setIsAdding(true)}
+            onClick={() => { setAddTarget(null); setIsAdding(true) }}
             className="p-2 rounded-lg bg-[#00FF7F20] text-[#00FF7F] transition-colors"
+            title="Добавить себе"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/>
