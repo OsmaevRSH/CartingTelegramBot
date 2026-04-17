@@ -14,8 +14,12 @@ function colored_echo() {
 }
 
 function check_docker() {
-    if ! command -v docker-compose &> /dev/null; then
-        colored_echo "❌ docker-compose не найден" $RED
+    if command -v docker-compose &> /dev/null; then
+        DC="docker-compose"
+    elif docker compose version &> /dev/null 2>&1; then
+        DC="docker compose"
+    else
+        colored_echo "❌ docker-compose не найден. Установите Docker Compose v1 или Docker с плагином Compose v2." $RED
         exit 1
     fi
 }
@@ -46,7 +50,7 @@ function show_help() {
 function start_bot() {
     colored_echo "🚀 Запускаю бота..." $BLUE
     cd deployment
-    docker-compose up -d
+    $DC up -d
     if [ $? -eq 0 ]; then
         colored_echo "✅ Бот запущен!" $GREEN
     else
@@ -58,7 +62,7 @@ function start_bot() {
 function stop_bot() {
     colored_echo "🛑 Останавливаю бота..." $BLUE
     cd deployment
-    docker-compose down
+    $DC down
     if [ $? -eq 0 ]; then
         colored_echo "✅ Бот остановлен!" $GREEN
     else
@@ -70,7 +74,7 @@ function stop_bot() {
 function restart_bot() {
     colored_echo "🔄 Перезапускаю бота..." $BLUE
     cd deployment
-    docker-compose restart
+    $DC restart
     if [ $? -eq 0 ]; then
         colored_echo "✅ Бот перезапущен!" $GREEN
     else
@@ -82,29 +86,29 @@ function restart_bot() {
 function show_status() {
     colored_echo "📊 Статус бота:" $BLUE
     cd deployment
-    docker-compose ps
+    $DC ps
     cd ..
 }
 
 function show_logs() {
     colored_echo "📝 Логи бота:" $BLUE
     cd deployment
-    docker-compose logs --tail=50
+    $DC logs --tail=50
     cd ..
 }
 
 function show_logs_follow() {
     colored_echo "📝 Логи бота (в реальном времени):" $BLUE
     cd deployment
-    docker-compose logs -f
+    $DC logs -f
     cd ..
 }
 
 function update_bot() {
     colored_echo "🔄 Обновляю и перезапускаю бота..." $BLUE
     cd deployment
-    docker-compose down
-    docker-compose up -d --build
+    $DC down
+    $DC up -d --build
     if [ $? -eq 0 ]; then
         colored_echo "✅ Бот обновлен и перезапущен!" $GREEN
     else
@@ -116,14 +120,14 @@ function update_bot() {
 function shell_bot() {
     colored_echo "🐚 Вход в контейнер бота..." $BLUE
     cd deployment
-    docker-compose exec carting-bot bash
+    $DC exec carting-bot bash
     cd ..
 }
 
 function shell_api() {
     colored_echo "🐚 Вход в контейнер API..." $BLUE
     cd deployment
-    docker-compose exec carting-api bash
+    $DC exec carting-api bash
     cd ..
 }
 
@@ -133,7 +137,7 @@ function clean_bot() {
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         cd deployment
-        docker-compose down -v --remove-orphans
+        $DC down -v --remove-orphans
         docker system prune -f
         cd ..
         rm -rf data logs
@@ -158,14 +162,14 @@ function backup_bot() {
 function clear_database() {
     colored_echo "🗑️  Очистка базы данных..." $BLUE
     cd deployment
-    docker-compose exec carting-bot python bot/utils/clear_database.py
+    $DC exec carting-bot python bot/utils/clear_database.py
     cd ..
 }
 
 function health_check() {
     colored_echo "🏥 Проверка здоровья системы..." $BLUE
     cd deployment
-    docker-compose exec carting-bot python bot/utils/health_check.py
+    $DC exec carting-bot python bot/utils/health_check.py
     cd ..
 }
 
