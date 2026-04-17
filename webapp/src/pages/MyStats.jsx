@@ -1,0 +1,149 @@
+import { useState, useEffect, useCallback } from 'react'
+import RaceCard from '../components/RaceCard.jsx'
+import LoadingSpinner from '../components/LoadingSpinner.jsx'
+import { fetchStats, deleteStats } from '../api/client.js'
+
+export default function MyStats({ userId }) {
+  const [races, setRaces] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  const load = useCallback(async () => {
+    if (userId === null || userId === undefined) return
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await fetchStats(userId)
+      // Sort by date descending
+      const sorted = (data || []).sort((a, b) => {
+        const toSortable = (d) => d.substr(6, 4) + d.substr(3, 2) + d.substr(0, 2)
+        return toSortable(b.date).localeCompare(toSortable(a.date))
+      })
+      setRaces(sorted)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [userId])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  async function handleDelete(race) {
+    try {
+      await deleteStats(userId, race.date, race.race_number, race.num)
+      setRaces(prev =>
+        prev.filter(
+          (r) =>
+            !(r.date === race.date &&
+              r.race_number === race.race_number &&
+              String(r.num) === String(race.num))
+        )
+      )
+    } catch (e) {
+      alert(`Ошибка при удалении: ${e.message}`)
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="px-4 pt-5 pb-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-white">Мои заезды</h1>
+            {!loading && races.length > 0 && (
+              <p className="text-[#888888] text-xs mt-0.5">
+                {races.length} {pluralRaces(races.length)}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={load}
+            disabled={loading}
+            className="p-2 rounded-lg bg-[#1e1e1e] text-[#888] disabled:opacity-50 transition-colors"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={loading ? 'animate-spin' : ''}
+            >
+              <path d="M23 4v6h-6"/>
+              <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto px-4 pb-4 tab-content">
+        {loading && (
+          <div className="flex justify-center py-16">
+            <LoadingSpinner size="lg" label="Загрузка заездов..." />
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="bg-[#1a0000] border border-[#FF444433] rounded-xl p-4 flex items-start gap-3">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <div>
+              <p className="text-[#FF4444] text-sm">{error}</p>
+              <button onClick={load} className="text-xs text-[#888] underline mt-1">
+                Повторить
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!loading && !error && userId === null && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <div className="text-4xl">🔒</div>
+            <p className="text-[#888888] text-sm text-center">
+              Откройте приложение через Telegram-бота
+            </p>
+          </div>
+        )}
+
+        {!loading && !error && userId !== null && races.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <div className="text-5xl">🏁</div>
+            <p className="text-white font-medium">Заездов пока нет</p>
+            <p className="text-[#888888] text-sm text-center">
+              Добавьте свой первый заезд через вкладку «Добавить»
+            </p>
+          </div>
+        )}
+
+        {!loading && !error && races.length > 0 && (
+          <div className="space-y-2">
+            {races.map((race, idx) => (
+              <RaceCard
+                key={`${race.date}-${race.race_number}-${race.num}-${idx}`}
+                race={race}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function pluralRaces(n) {
+  if (n % 10 === 1 && n % 100 !== 11) return 'заезд'
+  if ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) return 'заезда'
+  return 'заездов'
+}

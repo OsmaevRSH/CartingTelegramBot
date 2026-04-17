@@ -26,14 +26,15 @@ function show_help() {
     echo "Использование: ./manage_remote.sh [команда]"
     echo ""
     echo "Команды:"
-    echo "  start        - Запустить бота"
-    echo "  stop         - Остановить бота"
-    echo "  restart      - Перезапустить бота"
-    echo "  status       - Показать статус бота"
-    echo "  logs         - Показать логи бота"
+    echo "  start        - Запустить все сервисы (бот + API + webapp)"
+    echo "  stop         - Остановить все сервисы"
+    echo "  restart      - Перезапустить все сервисы"
+    echo "  status       - Показать статус сервисов"
+    echo "  logs         - Показать логи"
     echo "  logs-f       - Показать логи в реальном времени"
-    echo "  update       - Обновить и перезапустить бота"
+    echo "  update       - Обновить и перезапустить"
     echo "  shell        - Войти в контейнер бота"
+    echo "  shell-api    - Войти в контейнер API"
     echo "  clean        - Удалить все данные и контейнеры"
     echo "  backup       - Создать резервную копию базы данных"
     echo "  clear-db     - Очистить базу данных"
@@ -119,6 +120,13 @@ function shell_bot() {
     cd ..
 }
 
+function shell_api() {
+    colored_echo "🐚 Вход в контейнер API..." $BLUE
+    cd deployment
+    docker-compose exec carting-api bash
+    cd ..
+}
+
 function clean_bot() {
     colored_echo "⚠️  Удаление всех данных и контейнеров..." $YELLOW
     read -p "Вы уверены? Все данные будут удалены! (y/N): " -n 1 -r
@@ -150,14 +158,14 @@ function backup_bot() {
 function clear_database() {
     colored_echo "🗑️  Очистка базы данных..." $BLUE
     cd deployment
-    docker-compose exec carting-bot python utils/clear_database.py
+    docker-compose exec carting-bot python bot/utils/clear_database.py
     cd ..
 }
 
 function health_check() {
     colored_echo "🏥 Проверка здоровья системы..." $BLUE
     cd deployment
-    docker-compose exec carting-bot python utils/health_check.py
+    docker-compose exec carting-bot python bot/utils/health_check.py
     cd ..
 }
 
@@ -189,6 +197,9 @@ case "${1:-help}" in
         ;;
     shell)
         shell_bot
+        ;;
+    shell-api)
+        shell_api
         ;;
     clean)
         clean_bot

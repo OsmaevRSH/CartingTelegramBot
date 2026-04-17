@@ -1,0 +1,3 @@
+carting.ltheresi.com {
+    reverse_proxy carting-webapp:80
+}

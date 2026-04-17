@@ -2,30 +2,21 @@ services:
   carting-bot:
     build:
       context: ../
-      dockerfile: deployment/docker/Dockerfile
+      dockerfile: deployment/bot/Dockerfile
     container_name: carting-bot
     restart: unless-stopped
-    user: "0:0"
-    privileged: true
-    cap_add:
-      - ALL
-    security_opt:
-      - seccomp:unconfined
     env_file:
       - ../.env
     environment:
       - DATABASE_PATH=/app/data/races.db
       - LOG_FILE=/app/logs/bot.log
     volumes:
-      - ../data:/app/data:rw,Z
-      - ../logs:/app/logs:rw,Z
-      - ../config:/app/config:rw,Z
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=100m
+      - ../data:/app/data:rw
+      - ../logs:/app/logs:rw
     networks:
       - carting-network
     healthcheck:
-      test: ["CMD", "python", "utils/health_check.py"]
+      test: ["CMD", "python", "bot/utils/health_check.py"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -36,6 +27,61 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  carting-api:
+    build:
+      context: ../
+      dockerfile: deployment/api/Dockerfile
+    container_name: carting-api
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      - DATABASE_PATH=/app/data/races.db
+      - LOG_FILE=/app/logs/api.log
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    volumes:
+      - ../data:/app/data:rw
+      - ../logs:/app/logs:rw
+    networks:
+      - carting-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  carting-webapp:
+    build:
+      context: ../
+      dockerfile: deployment/webapp/Dockerfile
+    container_name: carting-webapp
+    restart: unless-stopped
+    depends_on:
+      - carting-api
+    networks:
+      - carting-network
+
+  carting-caddy:
+    image: caddy:2-alpine
+    container_name: carting-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - carting-webapp
+    networks:
+      - carting-network
+
 networks:
   carting-network:
-    driver: bridge 
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
