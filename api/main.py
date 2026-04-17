@@ -43,10 +43,34 @@ app.include_router(leaderboard.router, prefix="/api", tags=["leaderboard"])
 
 @app.get("/api/photo/{user_id}")
 async def get_photo(user_id: int):
-    """Отдаёт закэшированное фото профиля пользователя."""
-    from core.config.config import DATABASE_PATH
+    """
+    Отдаёт фото профиля пользователя.
+    Если нет в кэше — скачивает через Bot API и кэширует.
+    """
+    import aiohttp
+    from core.config.config import DATABASE_PATH, BOT_TOKEN
+
     photos_dir = Path(DATABASE_PATH).parent / "photos"
+    photos_dir.mkdir(parents=True, exist_ok=True)
     photo_path = photos_dir / f"{user_id}.jpg"
+
+    if not photo_path.exists() and BOT_TOKEN:
+        try:
+            async with aiohttp.ClientSession() as session:
+                base = f"https://api.telegram.org/bot{BOT_TOKEN}"
+                async with session.get(f"{base}/getUserProfilePhotos?user_id={user_id}&limit=1") as r:
+                    data = await r.json()
+                if data.get("ok") and data["result"]["total_count"] > 0:
+                    file_id = data["result"]["photos"][0][-1]["file_id"]
+                    async with session.get(f"{base}/getFile?file_id={file_id}") as r:
+                        fdata = await r.json()
+                    file_path = fdata["result"]["file_path"]
+                    async with session.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}") as r:
+                        if r.status == 200:
+                            photo_path.write_bytes(await r.read())
+        except Exception:
+            pass
+
     if not photo_path.exists():
         raise HTTPException(status_code=404, detail="Photo not found")
     return FileResponse(photo_path, media_type="image/jpeg")
