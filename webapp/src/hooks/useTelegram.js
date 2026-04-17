@@ -5,6 +5,7 @@ export function useTelegram() {
   const [user, setUser] = useState(null)
   const [userId, setUserId] = useState(null)
   const [userName, setUserName] = useState('Пользователь')
+  const [userUsername, setUserUsername] = useState(null)
   const [isDevMode, setIsDevMode] = useState(false)
 
   useEffect(() => {
@@ -21,6 +22,7 @@ export function useTelegram() {
       setUserName(
         tgUser?.first_name || tgUser?.username || 'Пользователь'
       )
+      setUserUsername(tgUser?.username ?? null)
       setIsDevMode(false)
     } else {
       // Dev mode: no real Telegram context
@@ -28,9 +30,10 @@ export function useTelegram() {
       setUser(null)
       setUserId(0)
       setUserName('Dev User')
+      setUserUsername(null)
       setIsDevMode(true)
     }
   }, [])
 
-  return { tg, user, userId, userName, isDevMode }
+  return { tg, user, userId, userName, userUsername, isDevMode }
 }

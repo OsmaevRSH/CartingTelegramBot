@@ -90,11 +90,18 @@ def init_db():
             CREATE TABLE IF NOT EXISTS user_profiles (
                 user_id INTEGER PRIMARY KEY,
                 telegram_name TEXT,
+                telegram_username TEXT,
                 updated_at TEXT DEFAULT (datetime('now'))
             )
             """
         )
         conn.commit()
+
+        try:
+            conn.execute("ALTER TABLE user_profiles ADD COLUMN telegram_username TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
         cursor = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='user_competitors'"
@@ -221,31 +228,33 @@ def get_all_competitors():
         return cur.fetchall()
 
 
-def upsert_user_profile(user_id: int, telegram_name: str):
-    """Сохраняет или обновляет Telegram-имя пользователя."""
+def upsert_user_profile(user_id: int, telegram_name: str, telegram_username: str = None):
+    """Сохраняет или обновляет Telegram-имя и username пользователя."""
     if not telegram_name or not telegram_name.strip():
         return
     with _get_conn() as conn:
         conn.execute(
             """
-            INSERT INTO user_profiles (user_id, telegram_name, updated_at)
-            VALUES (?, ?, datetime('now'))
+            INSERT INTO user_profiles (user_id, telegram_name, telegram_username, updated_at)
+            VALUES (?, ?, ?, datetime('now'))
             ON CONFLICT(user_id) DO UPDATE SET
                 telegram_name = excluded.telegram_name,
+                telegram_username = COALESCE(excluded.telegram_username, telegram_username),
                 updated_at = excluded.updated_at
             """,
-            (user_id, telegram_name.strip()),
+            (user_id, telegram_name.strip(), telegram_username.strip() if telegram_username else None),
         )
         conn.commit()
 
 
 def get_all_users():
-    """Return list of {user_id, display_name} for all users with saved races."""
+    """Return list of {user_id, display_name, telegram_username} for all users with saved races."""
     with _get_conn() as conn:
         cur = conn.execute(
             """
             SELECT uc.user_id, uc.name, uc.display_name,
-                   COALESCE(up.telegram_name, '') as telegram_name
+                   COALESCE(up.telegram_name, '') as telegram_name,
+                   COALESCE(up.telegram_username, '') as telegram_username
             FROM user_competitors uc
             LEFT JOIN user_profiles up ON up.user_id = uc.user_id
             GROUP BY uc.user_id
@@ -255,16 +264,22 @@ def get_all_users():
         rows = cur.fetchall()
 
     result = []
-    for user_id, name, display_name, telegram_name in rows:
+    for user_id, name, display_name, telegram_name, telegram_username in rows:
         if telegram_name and telegram_name.strip():
             label = telegram_name.strip()
+        elif telegram_username and telegram_username.strip():
+            label = f'@{telegram_username.strip()}'
         elif name and name.strip() and not (display_name or '').startswith('Карт #'):
             label = name.strip()
         elif display_name and display_name.strip() and not display_name.startswith('Карт #'):
             label = display_name.strip()
         else:
             label = f'ID:{user_id}'
-        result.append({'user_id': user_id, 'display_name': label})
+        result.append({
+            'user_id': user_id,
+            'display_name': label,
+            'telegram_username': telegram_username.strip() if telegram_username else None,
+        })
 
     return result
 

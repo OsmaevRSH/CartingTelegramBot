@@ -146,17 +146,39 @@ export default function MyStats({ userId, userName }) {
             {otherPilots.map(u => {
               const isSelected = String(selectedId) === String(u.user_id)
               return (
-                <button
-                  key={u.user_id}
-                  onClick={() => handleSelectPilot(u.user_id, u.display_name)}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                    isSelected
-                      ? 'bg-[#00FF7F] text-black'
-                      : 'bg-[#1e1e1e] text-[#888] border border-[#333]'
-                  }`}
-                >
-                  {u.display_name}
-                </button>
+                <div key={u.user_id} className="shrink-0 flex items-center gap-1">
+                  <button
+                    onClick={() => handleSelectPilot(u.user_id, u.display_name)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                      isSelected
+                        ? 'bg-[#00FF7F] text-black'
+                        : 'bg-[#1e1e1e] text-[#888] border border-[#333]'
+                    }`}
+                  >
+                    {u.display_name}
+                  </button>
+                  {u.telegram_username && (
+                    <button
+                      onClick={() => {
+                        const tg = window.Telegram?.WebApp
+                        const url = `https://t.me/${u.telegram_username}`
+                        if (tg?.openTelegramLink) {
+                          tg.openTelegramLink(url)
+                        } else {
+                          window.open(url, '_blank')
+                        }
+                      }}
+                      className="p-1 text-[#555] hover:text-[#888]"
+                      title={`@${u.telegram_username}`}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        <polyline points="15 3 21 3 21 9"/>
+                        <line x1="10" y1="14" x2="21" y2="3"/>
+                      </svg>
+                    </button>
+                  )}
+                </div>
               )
             })}
           </div>

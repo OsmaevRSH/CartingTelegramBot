@@ -227,11 +227,11 @@ async def add_race_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users_ordered = list(users_dict.values())
     context.user_data["user_options"] = users_ordered
 
-    # Сохраняем Telegram-имена всех пользователей
+    # Сохраняем Telegram-имена и username всех пользователей
     for u in users_ordered:
         name = u.full_name or u.username
         if name:
-            upsert_user_profile(u.id, name)
+            upsert_user_profile(u.id, name, u.username)
 
     keyboard = _build_keyboard(
         [[(u.full_name or u.username or str(u.id), f"user_{u.id}")] for u in users_ordered]
