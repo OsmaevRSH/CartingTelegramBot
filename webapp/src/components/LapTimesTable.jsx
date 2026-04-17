@@ -1,3 +1,9 @@
+// F1 timing colors:
+// Purple  #B370FF — personal best (absolute best sector/lap)
+// Green   #39FF6A — improvement over previous lap (not absolute best)
+// Yellow  #F5C518 — no improvement, slower than best
+// Grey              — start lap / no data
+
 function timeToMs(str) {
   if (!str || str === '—') return Infinity
   try {
@@ -11,6 +17,24 @@ function timeToMs(str) {
   }
 }
 
+// Returns F1 color class for a sector value
+// purple = absolute best, green = improved vs prev, yellow = no improvement
+function sectorClass(val, bestMs, prevMs) {
+  const ms = timeToMs(val)
+  if (ms === Infinity) return 'text-[#353534]'
+  if (ms === bestMs)   return 'text-[#B370FF] font-bold'   // purple — personal best
+  if (ms < prevMs)     return 'text-[#39FF6A]'             // green  — improved
+  return 'text-[#F5C518]'                                  // yellow — no improvement
+}
+
+// Returns F1 color class for full lap time
+function lapClass(ms, bestLapMs, prevLapMs) {
+  if (ms === Infinity) return 'text-[#353534]'
+  if (ms === bestLapMs) return 'text-[#B370FF] font-bold'  // purple — best lap
+  if (ms < prevLapMs)   return 'text-[#39FF6A]'            // green  — faster than prev
+  return 'text-[#F5C518]'                                  // yellow — slower than prev
+}
+
 export default function LapTimesTable({ lapTimes }) {
   if (!lapTimes || lapTimes.length === 0) {
     return (
@@ -22,25 +46,12 @@ export default function LapTimesTable({ lapTimes }) {
 
   const raceLaps = lapTimes.filter(l => l.lap_number !== 0)
 
-  const bestLapMs  = Math.min(...raceLaps.map(l => timeToMs(l.lap_time)))
-  const bestS1Ms   = Math.min(...raceLaps.map(l => timeToMs(l.sector1)))
-  const bestS2Ms   = Math.min(...raceLaps.map(l => timeToMs(l.sector2)))
-  const bestS3Ms   = Math.min(...raceLaps.map(l => timeToMs(l.sector3)))
-  const bestS4Ms   = Math.min(...raceLaps.map(l => timeToMs(l.sector4)))
-
-  function lapColor(val) {
-    const ms = timeToMs(val)
-    if (ms === Infinity) return 'text-[#454747]'
-    if (ms === bestLapMs) return 'text-[#ffb4a8] font-bold'
-    return 'text-[#e5e2e1]'
-  }
-
-  function sectorColor(val, bestMs) {
-    const ms = timeToMs(val)
-    if (ms === Infinity) return 'text-[#454747]'
-    if (ms === bestMs) return 'text-[#ff5540] font-bold'
-    return 'text-[#ebbbb4]'
-  }
+  // Absolute bests across all race laps
+  const bestLapMs = Math.min(...raceLaps.map(l => timeToMs(l.lap_time)))
+  const bestS1Ms  = Math.min(...raceLaps.map(l => timeToMs(l.sector1)))
+  const bestS2Ms  = Math.min(...raceLaps.map(l => timeToMs(l.sector2)))
+  const bestS3Ms  = Math.min(...raceLaps.map(l => timeToMs(l.sector3)))
+  const bestS4Ms  = Math.min(...raceLaps.map(l => timeToMs(l.sector4)))
 
   const bestLapRow = raceLaps.find(l => timeToMs(l.lap_time) === bestLapMs)
 
@@ -48,9 +59,9 @@ export default function LapTimesTable({ lapTimes }) {
     <div className="space-y-3">
       {/* Best lap banner */}
       {bestLapRow && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-[#0e0e0e] border-l-2 border-[#ffb4a8]">
-          <span className="text-[#ffb4a8] text-[9px] font-bold uppercase tracking-widest">Лучший круг</span>
-          <span className="text-[#ffb4a8] lap-time text-sm font-bold ml-auto">{bestLapRow.lap_time}</span>
+        <div className="flex items-center gap-2 px-3 py-2 bg-[#0e0e0e]" style={{ borderLeft: '2px solid #B370FF' }}>
+          <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#B370FF' }}>Лучший круг</span>
+          <span className="lap-time text-sm font-bold ml-auto" style={{ color: '#B370FF' }}>{bestLapRow.lap_time}</span>
           <span className="text-[#ebbbb4] lap-time text-xs">Круг {bestLapRow.lap_number}</span>
         </div>
       )}
@@ -71,43 +82,56 @@ export default function LapTimesTable({ lapTimes }) {
           <tbody>
             {lapTimes.map((lap, idx) => {
               const isStart = lap.lap_number === 0
-              const isBestLap = !isStart && timeToMs(lap.lap_time) === bestLapMs
+              const lapMs   = timeToMs(lap.lap_time)
+              const isBestLap = !isStart && lapMs === bestLapMs
+
+              // Previous race lap for "improved?" comparison
+              const prevRaceIdx = raceLaps.findIndex(l => l.lap_number === lap.lap_number) - 1
+              const prevLap = prevRaceIdx >= 0 ? raceLaps[prevRaceIdx] : null
+              const prevLapMs = prevLap ? timeToMs(prevLap.lap_time) : Infinity
+              const prevS1Ms  = prevLap ? timeToMs(prevLap.sector1)  : Infinity
+              const prevS2Ms  = prevLap ? timeToMs(prevLap.sector2)  : Infinity
+              const prevS3Ms  = prevLap ? timeToMs(prevLap.sector3)  : Infinity
+              const prevS4Ms  = prevLap ? timeToMs(prevLap.sector4)  : Infinity
 
               return (
                 <tr
                   key={idx}
-                  className={`border-b border-[#201f1f] last:border-0 ${
-                    isBestLap ? 'bg-[#0e0e0e]' : ''
-                  }`}
-                  style={isBestLap ? { borderLeft: '2px solid #ffb4a8' } : {}}
+                  className={`border-b border-[#201f1f] last:border-0 ${isBestLap ? 'bg-[#0e0e0e]' : ''}`}
+                  style={isBestLap ? { borderLeft: '2px solid #B370FF' } : {}}
                 >
+                  {/* Lap number */}
                   <td className="py-1.5 text-left">
-                    <span className={`${isBestLap ? 'text-[#ffb4a8]' : 'text-[#454747]'}`}>
+                    <span className={isStart ? 'text-[#454747]' : isBestLap ? 'text-[#B370FF]' : 'text-[#454747]'}>
                       {isStart ? 'S' : lap.lap_number}
                     </span>
                   </td>
+
+                  {/* Lap time */}
                   <td className={`py-1.5 text-right px-1 ${
-                    isStart ? 'text-[#454747]' : lapColor(lap.lap_time)
+                    isStart ? 'text-[#454747]' : lapClass(lapMs, bestLapMs, prevLapMs)
                   }`}>
                     {lap.lap_time || '—'}
                   </td>
+
+                  {/* Sectors */}
                   <td className={`py-1.5 text-right px-1 ${
-                    isStart ? 'text-[#454747]' : sectorColor(lap.sector1, bestS1Ms)
+                    isStart ? 'text-[#454747]' : sectorClass(lap.sector1, bestS1Ms, prevS1Ms)
                   }`}>
                     {isStart ? '—' : (lap.sector1 || '—')}
                   </td>
                   <td className={`py-1.5 text-right px-1 ${
-                    sectorColor(lap.sector2, bestS2Ms)
+                    isStart ? 'text-[#454747]' : sectorClass(lap.sector2, bestS2Ms, prevS2Ms)
                   }`}>
                     {lap.sector2 || '—'}
                   </td>
                   <td className={`py-1.5 text-right px-1 ${
-                    sectorColor(lap.sector3, bestS3Ms)
+                    isStart ? 'text-[#454747]' : sectorClass(lap.sector3, bestS3Ms, prevS3Ms)
                   }`}>
                     {lap.sector3 || '—'}
                   </td>
                   <td className={`py-1.5 text-right px-1 ${
-                    sectorColor(lap.sector4, bestS4Ms)
+                    isStart ? 'text-[#454747]' : sectorClass(lap.sector4, bestS4Ms, prevS4Ms)
                   }`}>
                     {lap.sector4 || '—'}
                   </td>
@@ -121,12 +145,16 @@ export default function LapTimesTable({ lapTimes }) {
       {/* Legend */}
       <div className="flex items-center gap-4 pt-1">
         <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 bg-[#ffb4a8]" />
-          <span className="text-[#454747] text-[9px] uppercase tracking-widest">Лучший круг</span>
+          <div className="w-2 h-2" style={{ background: '#B370FF' }} />
+          <span className="text-[#454747] text-[9px] uppercase tracking-widest">Личный рекорд</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 bg-[#ff5540]" />
-          <span className="text-[#454747] text-[9px] uppercase tracking-widest">Лучший сектор</span>
+          <div className="w-2 h-2" style={{ background: '#39FF6A' }} />
+          <span className="text-[#454747] text-[9px] uppercase tracking-widest">Улучшение</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2" style={{ background: '#F5C518' }} />
+          <span className="text-[#454747] text-[9px] uppercase tracking-widest">Без улучш.</span>
         </div>
       </div>
     </div>
