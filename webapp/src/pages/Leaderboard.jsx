@@ -27,8 +27,12 @@ function Avatar({ name, photoUrl, userId, size = 32 }) {
   const initials = (name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
   const style = { width: size, height: size, minWidth: size, minHeight: size, overflow: 'hidden' }
 
-  const src = attempt === 0 ? photoUrl :
-              attempt === 1 && userId ? `/api/photo/${userId}` : null
+  // attempt 0: CDN url (if exists), attempt 1: API cache, attempt 2+: initials
+  const src = (() => {
+    if (attempt === 0 && photoUrl) return photoUrl
+    if (userId) return `/api/photo/${userId}`
+    return null
+  })()
 
   if (src) {
     return <img src={src} alt={name} style={style} className="object-cover" onError={() => setAttempt(a => a + 1)} />

@@ -373,8 +373,12 @@ function Avatar({ name, photoUrl, userId, size = 24, square = false }) {
     overflow: 'hidden',
   }
 
-  const src = attempt === 0 ? photoUrl :
-              attempt === 1 && userId ? `/api/photo/${userId}` : null
+  // attempt 0: CDN url (if exists), attempt 1: API cache, attempt 2+: initials
+  const src = (() => {
+    if (attempt === 0 && photoUrl) return photoUrl
+    if (userId) return `/api/photo/${userId}`
+    return null
+  })()
 
   if (src) {
     return (
