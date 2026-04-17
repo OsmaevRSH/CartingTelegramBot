@@ -1,5 +1,7 @@
 import html
+import asyncio
 import logging
+from pathlib import Path
 from datetime import date
 from telegram import (
     Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup,
@@ -97,6 +99,22 @@ def _format_competitor_info(comp_data: tuple) -> str:
     )
     lap_table = _format_lap_times_table(lap_times_json)
     return basic_info + "📋 Данные по кругам:\n" + lap_table
+
+
+async def _cache_user_photo(bot, user_id: int) -> None:
+    """Скачивает фото профиля пользователя и сохраняет в data/photos/."""
+    try:
+        from core.config.config import DATABASE_PATH
+        photos_dir = Path(DATABASE_PATH).parent / "photos"
+        photos_dir.mkdir(parents=True, exist_ok=True)
+        photo_path = photos_dir / f"{user_id}.jpg"
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
+        if not photos.photos:
+            return
+        file = await bot.get_file(photos.photos[0][-1].file_id)
+        await file.download_to_drive(photo_path)
+    except Exception as e:
+        logger.debug(f"Photo cache failed for {user_id}: {e}")
 
 
 async def _render_leaderboard(
@@ -227,11 +245,12 @@ async def add_race_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users_ordered = list(users_dict.values())
     context.user_data["user_options"] = users_ordered
 
-    # Сохраняем Telegram-имена и username всех пользователей
+    # Сохраняем Telegram-имена и username всех пользователей, кэшируем фото
     for u in users_ordered:
         name = u.full_name or u.username
         if name:
             upsert_user_profile(u.id, name, u.username)
+        asyncio.create_task(_cache_user_photo(context.bot, u.id))
 
     keyboard = _build_keyboard(
         [[(u.full_name or u.username or str(u.id), f"user_{u.id}")] for u in users_ordered]

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
+import LapTimesTable from '../components/LapTimesTable.jsx'
 import { fetchLeaderboard, fetchLeaderboardToday, fetchKartsToday } from '../api/client.js'
 
 const SEG_ALL = 'all'
@@ -14,13 +15,23 @@ function todayDDMMYYYY() {
   return `${dd}.${mm}.${yyyy}`
 }
 
-function Avatar({ name, photoUrl, size = 32 }) {
-  const [imgError, setImgError] = useState(false)
+function parseLaps(json) {
+  try {
+    const arr = typeof json === 'string' ? JSON.parse(json) : json
+    return arr || []
+  } catch { return [] }
+}
+
+function Avatar({ name, photoUrl, userId, size = 32 }) {
+  const [attempt, setAttempt] = useState(0)
   const initials = (name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
   const style = { width: size, height: size, minWidth: size, minHeight: size, overflow: 'hidden' }
 
-  if (photoUrl && !imgError) {
-    return <img src={photoUrl} alt={name} style={style} className="object-cover" onError={() => setImgError(true)} />
+  const src = attempt === 0 ? photoUrl :
+              attempt === 1 && userId ? `/api/photo/${userId}` : null
+
+  if (src) {
+    return <img src={src} alt={name} style={style} className="object-cover" onError={() => setAttempt(a => a + 1)} />
   }
   return (
     <div style={style} className="flex items-center justify-center text-[10px] font-bold bg-[#353534] text-[#ebbbb4]">
@@ -43,6 +54,7 @@ export default function Leaderboard({ userId, resetSignal }) {
   const [kartsData, setKartsData] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [expandedId, setExpandedId] = useState(null)
 
   const scrollRef = useRef(null)
 
@@ -52,14 +64,14 @@ export default function Leaderboard({ userId, resetSignal }) {
   }, [resetSignal])
 
   const loadAll = useCallback(async () => {
-    setLoading(true); setError(null)
+    setLoading(true); setError(null); setExpandedId(null)
     try { setAllData((await fetchLeaderboard()) || []) }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }, [])
 
   const loadToday = useCallback(async () => {
-    setLoading(true); setError(null)
+    setLoading(true); setError(null); setExpandedId(null)
     try { setTodayData((await fetchLeaderboardToday(todayDDMMYYYY())) || []) }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
@@ -177,41 +189,62 @@ export default function Leaderboard({ userId, resetSignal }) {
                   String(entry.user_id) === String(userId)
                 const displayName = getDisplayName(entry)
                 const photoUrl = entry.photo_url || null
+                const laps = parseLaps(entry.lap_times_json)
+                const isExpanded = expandedId === entry.user_id
+                const hasLaps = laps.filter(l => l.lap_number !== 0).length > 0
 
                 return (
-                  <div
-                    key={`${entry.user_id}-${idx}`}
-                    className={`flex items-center gap-3 px-3 py-2.5 transition-all ${
-                      isCurrentUser
-                        ? 'bg-[#0e0e0e]'
-                        : 'bg-[#1c1b1b]'
-                    }`}
-                    style={isCurrentUser ? { borderLeft: '3px solid #ff5540' } : { borderLeft: '3px solid transparent' }}
-                  >
-                    <div className="shrink-0 w-7 flex justify-center">
-                      <RankBadge rank={rank} isCurrentUser={isCurrentUser} />
-                    </div>
-                    <Avatar name={displayName} photoUrl={photoUrl} size={32} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`text-sm font-bold uppercase tracking-tight truncate ${isCurrentUser ? 'text-[#ffb4a8]' : 'text-[#e5e2e1]'}`}>
-                          {displayName}
-                        </span>
-                        {isCurrentUser && (
-                          <span className="text-[8px] bg-[#ff5540] text-white px-1.5 py-0.5 font-bold uppercase tracking-widest">ВЫ</span>
+                  <div key={`${entry.user_id}-${idx}`}>
+                    <div
+                      className={`flex items-center gap-3 px-3 py-2.5 transition-all ${
+                        isCurrentUser ? 'bg-[#0e0e0e]' : 'bg-[#1c1b1b]'
+                      } ${hasLaps ? 'cursor-pointer' : ''}`}
+                      style={isCurrentUser ? { borderLeft: '3px solid #ff5540' } : { borderLeft: '3px solid transparent' }}
+                      onClick={() => hasLaps && setExpandedId(isExpanded ? null : entry.user_id)}
+                    >
+                      <div className="shrink-0 w-7 flex justify-center">
+                        <RankBadge rank={rank} isCurrentUser={isCurrentUser} />
+                      </div>
+                      <Avatar name={displayName} photoUrl={photoUrl} userId={entry.user_id} size={32} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-sm font-bold uppercase tracking-tight truncate ${isCurrentUser ? 'text-[#ffb4a8]' : 'text-[#e5e2e1]'}`}>
+                            {displayName}
+                          </span>
+                          {isCurrentUser && (
+                            <span className="text-[8px] bg-[#ff5540] text-white px-1.5 py-0.5 font-bold uppercase tracking-widest">ВЫ</span>
+                          )}
+                        </div>
+                        <div className="text-[#454747] text-[9px] uppercase tracking-widest mt-0.5">
+                          Карт #{entry.num}
+                          {entry.date && <span> · {entry.date}</span>}
+                        </div>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <div className="text-right">
+                          <div className={`lap-time text-sm font-bold ${isCurrentUser ? 'text-[#ffb4a8]' : 'text-[#ff5540]'}`}>
+                            {entry.best_lap || '—'}
+                          </div>
+                          <div className="text-[#454747] text-[9px] uppercase tracking-widest">лучший</div>
+                        </div>
+                        {hasLaps && (
+                          <svg
+                            width="12" height="12" viewBox="0 0 24 24" fill="none"
+                            stroke="#454747" strokeWidth="2" strokeLinecap="square"
+                            className={`shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                          >
+                            <polyline points="6 9 12 15 18 9"/>
+                          </svg>
                         )}
                       </div>
-                      <div className="text-[#454747] text-[9px] uppercase tracking-widest mt-0.5">
-                        Карт #{entry.num}
-                        {entry.date && <span> · {entry.date}</span>}
-                      </div>
                     </div>
-                    <div className="shrink-0 text-right">
-                      <div className={`lap-time text-sm font-bold ${isCurrentUser ? 'text-[#ffb4a8]' : 'text-[#ff5540]'}`}>
-                        {entry.best_lap || '—'}
+
+                    {/* Expanded lap times */}
+                    {isExpanded && hasLaps && (
+                      <div className="bg-[#0e0e0e] px-3 pt-2 pb-3" style={{ borderLeft: '3px solid #201f1f' }}>
+                        <LapTimesTable lapTimes={laps} />
                       </div>
-                      <div className="text-[#454747] text-[9px] uppercase tracking-widest">лучший</div>
-                    </div>
+                    )}
                   </div>
                 )
               })}
@@ -312,7 +345,7 @@ function PodiumRow({ entries, userId }) {
         return (
           <div key={i} className="flex flex-col items-center gap-1 flex-1">
             {/* Avatar */}
-            <Avatar name={displayName} photoUrl={photoUrl} size={rank === 1 ? 44 : 36} />
+            <Avatar name={displayName} photoUrl={photoUrl} userId={entry.user_id} size={rank === 1 ? 44 : 36} />
             {/* Name */}
             <div className={`text-[9px] font-bold uppercase tracking-widest text-center truncate max-w-[80px] ${
               rank === 1 ? 'text-[#ffb4a8]' : isCurrentUser ? 'text-[#ff5540]' : 'text-[#ebbbb4]'

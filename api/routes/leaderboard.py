@@ -15,7 +15,7 @@ def _row_to_dict(row: tuple) -> dict:
     keys = [
         "user_id", "date", "race_number", "num", "name", "display_name",
         "theor_lap", "theor_lap_formatted", "best_lap", "pos",
-        "telegram_name", "photo_url",
+        "telegram_name", "photo_url", "lap_times_json",
     ]
     return dict(zip(keys, row))
 

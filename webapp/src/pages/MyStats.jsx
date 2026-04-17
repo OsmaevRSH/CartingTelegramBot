@@ -5,6 +5,16 @@ import AddRace from './AddRace.jsx'
 import CompareScreen from './CompareScreen.jsx'
 import { fetchStats, deleteStats, fetchUsers } from '../api/client.js'
 
+function timeToMs(str) {
+  if (!str || str === '—') return 999999999
+  try {
+    const [minPart, rest] = str.trim().split(':')
+    if (!rest) return 999999999
+    const [sec, ms] = rest.split('.')
+    return parseInt(minPart) * 60000 + parseInt(sec) * 1000 + parseInt((ms || '0').padEnd(3, '0').slice(0, 3))
+  } catch { return 999999999 }
+}
+
 export default function MyStats({ userId, userName, resetSignal }) {
   const [isAdding, setIsAdding] = useState(false)
   const [addTarget, setAddTarget] = useState(null)
@@ -13,6 +23,7 @@ export default function MyStats({ userId, userName, resetSignal }) {
   const [users, setUsers] = useState([])
   const [selectedId, setSelectedId] = useState(userId)
   const [selectedName, setSelectedName] = useState('Я')
+  const [sortBy, setSortBy] = useState('date') // 'date' | 'time'
 
   const [races, setRaces] = useState([])
   const [loading, setLoading] = useState(false)
@@ -91,6 +102,12 @@ export default function MyStats({ userId, userName, resetSignal }) {
   const headerName = isMyself ? 'МОИ ЗАЕЗДЫ' : `ЗАЕЗДЫ — ${selectedName.toUpperCase()}`
   const otherPilots = users.filter(u => String(u.user_id) !== String(userId))
 
+  const sortedRaces = [...races].sort((a, b) => {
+    if (sortBy === 'time') return timeToMs(a.best_lap) - timeToMs(b.best_lap)
+    const ts = d => d.substr(6, 4) + d.substr(3, 2) + d.substr(0, 2)
+    return ts(b.date).localeCompare(ts(a.date))
+  })
+
   function handleAddDone() {
     setIsAdding(false)
     setAddTarget(null)
@@ -151,7 +168,7 @@ export default function MyStats({ userId, userName, resetSignal }) {
               className="w-full text-left px-4 py-3 bg-[#0e0e0e] transition-all hover:bg-[#1c1b1b]"
             >
               <div className="flex items-center gap-3">
-                <Avatar name={u.display_name} photoUrl={u.photo_url} size={32} />
+                <Avatar name={u.display_name} photoUrl={u.photo_url} userId={u.user_id} size={32} />
                 <span className="text-[#e5e2e1] font-bold text-sm uppercase tracking-tight">{u.display_name}</span>
               </div>
             </button>
@@ -175,6 +192,17 @@ export default function MyStats({ userId, userName, resetSignal }) {
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Sort toggle */}
+            <button
+              onClick={() => setSortBy(prev => prev === 'date' ? 'time' : 'date')}
+              className="px-2 py-2 bg-[#1c1b1b] text-[#ebbbb4] text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 transition-colors hover:bg-[#2a2a2a]"
+              title={sortBy === 'date' ? 'Сортировка по дате' : 'Сортировка по времени'}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square">
+                <line x1="4" y1="6" x2="11" y2="6"/><line x1="4" y1="12" x2="16" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
+              </svg>
+              {sortBy === 'date' ? 'Дата' : 'Время'}
+            </button>
             {/* Add for another person */}
             {otherPilots.length > 0 && (
               <button
@@ -238,7 +266,7 @@ export default function MyStats({ userId, userName, resetSignal }) {
                         : 'bg-[#1c1b1b] text-[#ebbbb4]'
                     }`}
                   >
-                    <Avatar name={u.display_name} photoUrl={u.photo_url} size={20} square />
+                    <Avatar name={u.display_name} photoUrl={u.photo_url} userId={u.user_id} size={20} square />
                     {u._isMe ? (userName || 'Я') : u.display_name}
                   </button>
                   {!u._isMe && u.telegram_username && (
@@ -310,7 +338,7 @@ export default function MyStats({ userId, userName, resetSignal }) {
 
         {!loading && !error && races.length > 0 && (
           <div className="space-y-2">
-            {races.map((race, idx) => (
+            {sortedRaces.map((race, idx) => (
               <RaceCard
                 key={`${race.date}-${race.race_number}-${race.num}-${idx}`}
                 race={race}
@@ -335,8 +363,8 @@ function openTgProfile(username, userId) {
   }
 }
 
-function Avatar({ name, photoUrl, size = 24, square = false }) {
-  const [imgError, setImgError] = useState(false)
+function Avatar({ name, photoUrl, userId, size = 24, square = false }) {
+  const [attempt, setAttempt] = useState(0)
   const initials = (name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
   const style = {
     width: size,
@@ -347,14 +375,17 @@ function Avatar({ name, photoUrl, size = 24, square = false }) {
     overflow: 'hidden',
   }
 
-  if (photoUrl && !imgError) {
+  const src = attempt === 0 ? photoUrl :
+              attempt === 1 && userId ? `/api/photo/${userId}` : null
+
+  if (src) {
     return (
       <img
-        src={photoUrl}
+        src={src}
         alt={name}
         style={style}
         className="object-cover"
-        onError={() => setImgError(true)}
+        onError={() => setAttempt(a => a + 1)}
       />
     )
   }

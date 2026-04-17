@@ -8,8 +8,10 @@ import os
 # api/main.py → api → project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI
+from pathlib import Path
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from core.database.db import init_db
 from api.routes import archive, races, stats, leaderboard
 
@@ -37,6 +39,17 @@ app.include_router(archive.router, prefix="/api", tags=["archive"])
 app.include_router(races.router, prefix="/api", tags=["races"])
 app.include_router(stats.router, prefix="/api", tags=["stats"])
 app.include_router(leaderboard.router, prefix="/api", tags=["leaderboard"])
+
+
+@app.get("/api/photo/{user_id}")
+async def get_photo(user_id: int):
+    """Отдаёт закэшированное фото профиля пользователя."""
+    from core.config.config import DATABASE_PATH
+    photos_dir = Path(DATABASE_PATH).parent / "photos"
+    photo_path = photos_dir / f"{user_id}.jpg"
+    if not photo_path.exists():
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return FileResponse(photo_path, media_type="image/jpeg")
 
 
 @app.get("/api/health")

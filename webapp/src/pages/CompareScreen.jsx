@@ -229,6 +229,7 @@ export default function CompareScreen({ myRace, myLaps, myName, onClose }) {
   const [pickedUser, setPickedUser] = useState(null)
   const [races, setRaces]       = useState([])
   const [pickedRace, setPickedRace] = useState(null)
+  const [sortBy, setSortBy]     = useState('date') // 'date' | 'time'
 
   useEffect(() => {
     setLoading(true)
@@ -264,6 +265,12 @@ export default function CompareScreen({ myRace, myLaps, myName, onClose }) {
   }
 
   const theirLaps = pickedRace ? parseLaps(pickedRace.lap_times_json) : []
+
+  const sortedRaces = [...races].sort((a, b) => {
+    if (sortBy === 'time') return timeToMs(a.best_lap) - timeToMs(b.best_lap)
+    const ts = d => d.substr(6, 4) + d.substr(3, 2) + d.substr(0, 2)
+    return ts(b.date).localeCompare(ts(a.date))
+  })
 
   return (
     <div className="flex flex-col h-full">
@@ -339,8 +346,21 @@ export default function CompareScreen({ myRace, myLaps, myName, onClose }) {
         {/* Step 2: Pick race */}
         {step === STEP_RACE && (
           <div className="space-y-1.5">
+            {!loading && races.length > 0 && (
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={() => setSortBy(prev => prev === 'date' ? 'time' : 'date')}
+                  className="px-2 py-1.5 bg-[#1c1b1b] text-[#ebbbb4] text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 transition-colors hover:bg-[#2a2a2a]"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square">
+                    <line x1="4" y1="6" x2="11" y2="6"/><line x1="4" y1="12" x2="16" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
+                  </svg>
+                  {sortBy === 'date' ? 'По дате' : 'По времени'}
+                </button>
+              </div>
+            )}
             {loading && <div className="flex justify-center py-12"><LoadingSpinner size="lg" label="Загрузка заездов..." /></div>}
-            {!loading && races.map((r, idx) => (
+            {!loading && sortedRaces.map((r, idx) => (
               <button
                 key={idx}
                 onClick={() => handlePickRace(r)}
