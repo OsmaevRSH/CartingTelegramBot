@@ -216,14 +216,16 @@ export default function MyStats({ userId, userName }) {
                     <Avatar name={u.display_name} photoUrl={u.photo_url} size={20} active={isSelected} />
                     {u._isMe ? (userName || 'Я') : u.display_name}
                   </button>
-                  <button
-                    onClick={() => openTgProfile(u.telegram_username, u.user_id)}
-                    className="p-1 text-[#444] hover:text-[#777] transition-colors"
-                  >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    </svg>
-                  </button>
+                  {!u._isMe && u.telegram_username && (
+                    <button
+                      onClick={() => openTgProfile(u.telegram_username, u.user_id)}
+                      className="p-1 text-[#444] hover:text-[#777] transition-colors"
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                      </svg>
+                    </button>
+                  )}
                 </div>
               )
             })}
