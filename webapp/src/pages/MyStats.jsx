@@ -49,6 +49,7 @@ export default function MyStats({ userId, userName }) {
   }, [selectedId, load])
 
   function handleSelectPilot(uid, name) {
+    if (String(uid) === String(selectedId)) return
     setSelectedId(uid)
     setSelectedName(name)
     setRaces([])
@@ -129,29 +130,14 @@ export default function MyStats({ userId, userName }) {
         {/* Pilot selector */}
         {(otherPilots.length > 0) && (
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            {/* Я */}
-            <button
-              onClick={() => handleSelectPilot(userId, userName || 'Я')}
-              className={`shrink-0 flex items-center gap-1.5 pl-1 pr-3 py-1 rounded-full text-xs font-medium transition-all ${
-                isMyself
-                  ? 'bg-[#00FF7F] text-black'
-                  : 'bg-[#1e1e1e] text-[#888] border border-[#333]'
-              }`}
-            >
-              <Avatar
-                name={userName || 'Я'}
-                photoUrl={users.find(u => String(u.user_id) === String(userId))?.photo_url}
-                size={20}
-                active={isMyself}
-              />
-              <span>{userName || 'Я'}</span>
-            </button>
-
-            {/* Other pilots */}
-            {otherPilots.map(u => {
+            {/* All pilots including current user */}
+            {[
+              { user_id: userId, display_name: userName || 'Я', photo_url: users.find(u => String(u.user_id) === String(userId))?.photo_url, telegram_username: users.find(u => String(u.user_id) === String(userId))?.telegram_username, _isMe: true },
+              ...otherPilots,
+            ].map(u => {
               const isSelected = String(selectedId) === String(u.user_id)
               return (
-                <div key={u.user_id} className="shrink-0 flex items-center gap-1">
+                <div key={u.user_id} className="shrink-0 flex items-center gap-0.5">
                   <button
                     onClick={() => handleSelectPilot(u.user_id, u.display_name)}
                     className={`flex items-center gap-1.5 pl-1 pr-3 py-1 rounded-full text-xs font-medium transition-all ${
@@ -161,29 +147,16 @@ export default function MyStats({ userId, userName }) {
                     }`}
                   >
                     <Avatar name={u.display_name} photoUrl={u.photo_url} size={20} active={isSelected} />
-                    {u.display_name}
+                    {u._isMe ? (userName || 'Я') : u.display_name}
                   </button>
-                  {u.telegram_username && (
-                    <button
-                      onClick={() => {
-                        const tg = window.Telegram?.WebApp
-                        const url = `https://t.me/${u.telegram_username}`
-                        if (tg?.openTelegramLink) {
-                          tg.openTelegramLink(url)
-                        } else {
-                          window.open(url, '_blank')
-                        }
-                      }}
-                      className="p-1 text-[#555] hover:text-[#888]"
-                      title={`@${u.telegram_username}`}
-                    >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                        <polyline points="15 3 21 3 21 9"/>
-                        <line x1="10" y1="14" x2="21" y2="3"/>
-                      </svg>
-                    </button>
-                  )}
+                  <button
+                    onClick={() => openTgProfile(u.telegram_username, u.user_id)}
+                    className="p-1 text-[#444] hover:text-[#777] transition-colors"
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </button>
                 </div>
               )
             })}
@@ -250,6 +223,18 @@ export default function MyStats({ userId, userName }) {
       </div>
     </div>
   )
+}
+
+function openTgProfile(username, userId) {
+  const tg = window.Telegram?.WebApp
+  if (username) {
+    const url = `https://t.me/${username}`
+    tg?.openTelegramLink ? tg.openTelegramLink(url) : window.open(url, '_blank')
+  } else {
+    // открываем профиль по ID — из него можно перейти в чат
+    const url = `tg://user?id=${userId}`
+    window.open(url, '_blank')
+  }
 }
 
 function Avatar({ name, photoUrl, size = 24, active = false }) {
