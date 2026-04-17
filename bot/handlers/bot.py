@@ -843,7 +843,7 @@ async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(
             "🏎️ Открыть Mini App",
-            url=f"https://t.me/{bot_username}/app",
+            url=f"https://t.me/{bot_username}/kart_app",
         )
     ]])
     await _send_message_with_thread(
