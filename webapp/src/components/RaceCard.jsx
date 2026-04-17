@@ -3,12 +3,15 @@ import LapTimesTable from './LapTimesTable.jsx'
 
 function PositionBadge({ pos }) {
   const posNum = parseInt(pos)
-  if (posNum === 1) return <span className="text-lg">🥇</span>
-  if (posNum === 2) return <span className="text-lg">🥈</span>
-  if (posNum === 3) return <span className="text-lg">🥉</span>
+  const label = `P${pos}`
+  const color =
+    posNum === 1 ? 'text-[#ffb4a8] font-bold' :
+    posNum === 2 ? 'text-[#e5e2e1]' :
+    posNum === 3 ? 'text-[#ebbbb4]' :
+    'text-[#454747]'
   return (
-    <span className="text-[#FF6B00] font-bold text-sm lap-time">
-      P{pos}
+    <span className={`text-xs lap-time ${color} bg-[#2a2a2a] px-2 py-0.5`}>
+      {label}
     </span>
   )
 }
@@ -41,11 +44,14 @@ export default function RaceCard({ race, onDelete }) {
     }
   }
 
+  const isP1 = parseInt(race.pos) === 1
+
   return (
     <div
-      className="bg-[#141414] border border-[#222222] rounded-xl overflow-hidden transition-all duration-200"
+      className="bg-[#0e0e0e] overflow-hidden transition-all duration-200"
+      style={{ borderLeft: `3px solid ${isP1 ? '#ff5540' : '#2a2a2a'}` }}
     >
-      {/* Header row — always visible, tap to expand */}
+      {/* Header row */}
       <button
         className="w-full text-left px-4 py-3 flex items-center gap-3"
         onClick={() => {
@@ -56,16 +62,16 @@ export default function RaceCard({ race, onDelete }) {
         {/* Date + race */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[#888888] text-xs lap-time">{race.date}</span>
-            <span className="text-[#444] text-xs">•</span>
-            <span className="text-[#888888] text-xs">{race.race_number}</span>
+            <span className="text-[#ebbbb4] text-[10px] lap-time uppercase tracking-widest">{race.date}</span>
+            <span className="text-[#353534] text-xs">·</span>
+            <span className="text-[#ebbbb4] text-[10px] uppercase tracking-widest">{race.race_number}</span>
           </div>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-white text-sm font-medium">
+            <span className="text-[#e5e2e1] text-sm font-bold tracking-tight">
               Карт #{race.num}
             </span>
             {race.display_name && !race.display_name.startsWith('Карт #') && race.display_name !== race.num?.toString() && (
-              <span className="text-[#888888] text-xs truncate">
+              <span className="text-[#454747] text-xs truncate">
                 {race.display_name}
               </span>
             )}
@@ -74,51 +80,47 @@ export default function RaceCard({ race, onDelete }) {
 
         {/* Best lap */}
         <div className="text-right shrink-0">
-          <div className="text-[#00FF7F] lap-time text-sm font-medium">
+          <div className="text-[#ffb4a8] lap-time text-sm font-bold">
             {race.best_lap || '—'}
           </div>
-          <div className="text-[#888888] text-xs mt-0.5">лучший</div>
+          <div className="text-[#454747] text-[9px] uppercase tracking-widest mt-0.5">лучший</div>
         </div>
 
         {/* Position */}
-        <div className="shrink-0 w-8 text-center">
+        <div className="shrink-0">
           <PositionBadge pos={race.pos} />
         </div>
 
         {/* Chevron */}
-        <div
-          className={`shrink-0 text-[#444] transition-transform duration-200 ${
-            expanded ? 'rotate-180' : ''
-          }`}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+        <div className={`shrink-0 text-[#353534] transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="square" strokeLinejoin="miter"/>
           </svg>
         </div>
       </button>
 
       {/* Expanded details */}
       {expanded && (
-        <div className="px-4 pb-4 border-t border-[#1e1e1e]">
+        <div className="px-4 pb-4" style={{ borderTop: '1px solid #201f1f' }}>
           {/* Stats grid */}
-          <div className="grid grid-cols-3 gap-3 mt-3 mb-4">
-            <StatItem label="Позиция" value={race.pos} highlight="orange" />
+          <div className="grid grid-cols-3 gap-2 mt-3 mb-4">
+            <StatItem label="Позиция" value={race.pos} highlight="primary" />
             <StatItem label="Кругов" value={race.laps} />
             <StatItem label="Теор. круг" value={race.theor_lap_formatted} highlight="accent" mono />
           </div>
 
           {race.gap_to_leader && (
-            <div className="mb-3 text-xs text-[#888888]">
-              Отставание от лидера:{' '}
-              <span className="text-white lap-time">{race.gap_to_leader}</span>
+            <div className="mb-3 text-xs text-[#454747] uppercase tracking-widest">
+              Отставание:{' '}
+              <span className="text-[#e5e2e1] lap-time">{race.gap_to_leader}</span>
             </div>
           )}
 
           {/* Lap times */}
           {lapTimes.length > 0 && (
             <div className="mt-3">
-              <div className="text-xs text-[#888888] mb-2 uppercase tracking-wider">
-                Время кругов
+              <div className="text-[9px] text-[#454747] mb-2 uppercase tracking-widest">
+                Телеметрия кругов
               </div>
               <LapTimesTable lapTimes={lapTimes} />
             </div>
@@ -128,17 +130,17 @@ export default function RaceCard({ race, onDelete }) {
           <div className="mt-4 flex justify-end">
             {confirmDelete ? (
               <div className="flex items-center gap-2">
-                <span className="text-[#888888] text-xs">Удалить заезд?</span>
+                <span className="text-[#ebbbb4] text-xs uppercase tracking-widest">Удалить?</span>
                 <button
                   onClick={() => setConfirmDelete(false)}
-                  className="px-3 py-1.5 rounded-lg border border-[#333] text-[#888] text-xs"
+                  className="px-3 py-1.5 bg-[#1c1b1b] text-[#ebbbb4] text-xs uppercase tracking-wider"
                 >
                   Отмена
                 </button>
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="px-3 py-1.5 rounded-lg bg-[#FF4444] text-white text-xs font-medium disabled:opacity-50"
+                  className="px-3 py-1.5 bg-[#FF4444] text-white text-xs font-bold uppercase tracking-wider disabled:opacity-50"
                 >
                   {deleting ? '...' : 'Удалить'}
                 </button>
@@ -146,9 +148,9 @@ export default function RaceCard({ race, onDelete }) {
             ) : (
               <button
                 onClick={handleDelete}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#2a1a1a] text-[#FF4444] text-xs hover:bg-[#1a0a0a] transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[#FF4444] text-xs uppercase tracking-wider hover:bg-[#1a0000] transition-colors"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter">
                   <polyline points="3 6 5 6 21 6"/>
                   <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
                   <path d="M10 11v6M14 11v6"/>
@@ -166,17 +168,17 @@ export default function RaceCard({ race, onDelete }) {
 
 function StatItem({ label, value, highlight, mono }) {
   const valClass = [
-    'text-sm font-medium',
+    'text-sm font-bold tracking-tight',
     mono ? 'lap-time' : '',
-    highlight === 'accent' ? 'text-[#00FF7F]' :
-    highlight === 'orange' ? 'text-[#FF6B00]' :
-    'text-white',
+    highlight === 'accent' ? 'text-[#ff5540]' :
+    highlight === 'primary' ? 'text-[#ffb4a8]' :
+    'text-[#e5e2e1]',
   ].join(' ')
 
   return (
-    <div className="bg-[#0f0f0f] rounded-lg px-2.5 py-2 text-center">
+    <div className="bg-[#1c1b1b] px-2.5 py-2 text-center">
       <div className={valClass}>{value ?? '—'}</div>
-      <div className="text-[#666] text-xs mt-0.5">{label}</div>
+      <div className="text-[#454747] text-[9px] uppercase tracking-widest mt-0.5">{label}</div>
     </div>
   )
 }

@@ -9,7 +9,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('stats')
   const { userId, userName, userUsername, userPhotoUrl, isDevMode } = useTelegram()
 
-  // Sync userId to API client and register Telegram name + avatar
   useEffect(() => {
     setUserId(userId)
     if (userId && userName) {
@@ -22,21 +21,20 @@ export default function App() {
       className="flex flex-col"
       style={{
         height: '100dvh',
-        backgroundColor: '#0A0A0A',
-        // Account for Telegram WebApp header/bottom bar
+        backgroundColor: '#131313',
         paddingTop: 'env(safe-area-inset-top, 0px)',
       }}
     >
       {/* Dev mode banner */}
       {isDevMode && (
-        <div className="bg-[#1a1000] border-b border-[#FF6B0044] px-4 py-2 flex items-center gap-2 shrink-0">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF6B00" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div className="bg-[#0e0e0e] px-4 py-2 flex items-center gap-2 shrink-0" style={{ borderBottom: '2px solid #ff5540' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffb4a8" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter">
             <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
             <line x1="12" y1="9" x2="12" y2="13"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
-          <span className="text-[#FF6B00] text-xs">
-            Режим разработки — Telegram не обнаружен
+          <span className="text-[#ffb4a8] text-[9px] uppercase tracking-widest font-bold">
+            Dev mode — Telegram не обнаружен
           </span>
         </div>
       )}

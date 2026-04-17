@@ -14,7 +14,7 @@ function timeToMs(str) {
 export default function LapTimesTable({ lapTimes }) {
   if (!lapTimes || lapTimes.length === 0) {
     return (
-      <p className="text-[#888888] text-xs text-center py-2">
+      <p className="text-[#ebbbb4] text-xs text-center py-2 uppercase tracking-widest">
         Нет данных по кругам
       </p>
     )
@@ -22,7 +22,6 @@ export default function LapTimesTable({ lapTimes }) {
 
   const raceLaps = lapTimes.filter(l => l.lap_number !== 0)
 
-  // Find best values across all race laps
   const bestLapMs  = Math.min(...raceLaps.map(l => timeToMs(l.lap_time)))
   const bestS1Ms   = Math.min(...raceLaps.map(l => timeToMs(l.sector1)))
   const bestS2Ms   = Math.min(...raceLaps.map(l => timeToMs(l.sector2)))
@@ -31,16 +30,16 @@ export default function LapTimesTable({ lapTimes }) {
 
   function lapColor(val) {
     const ms = timeToMs(val)
-    if (ms === Infinity) return 'text-[#555]'
-    if (ms === bestLapMs) return 'text-[#C084FC] font-bold'  // purple — best lap
-    return 'text-[#ccc]'
+    if (ms === Infinity) return 'text-[#454747]'
+    if (ms === bestLapMs) return 'text-[#ffb4a8] font-bold'
+    return 'text-[#e5e2e1]'
   }
 
   function sectorColor(val, bestMs) {
     const ms = timeToMs(val)
-    if (ms === Infinity) return 'text-[#555]'
-    if (ms === bestMs) return 'text-[#00FF7F]'  // green — best sector
-    return 'text-[#888]'
+    if (ms === Infinity) return 'text-[#454747]'
+    if (ms === bestMs) return 'text-[#ff5540] font-bold'
+    return 'text-[#ebbbb4]'
   }
 
   const bestLapRow = raceLaps.find(l => timeToMs(l.lap_time) === bestLapMs)
@@ -49,10 +48,10 @@ export default function LapTimesTable({ lapTimes }) {
     <div className="space-y-3">
       {/* Best lap banner */}
       {bestLapRow && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1a0033] border border-[#C084FC33]">
-          <span className="text-[#C084FC] text-xs font-bold uppercase tracking-wider">Лучший круг</span>
-          <span className="text-[#C084FC] lap-time text-sm font-bold ml-auto">{bestLapRow.lap_time}</span>
-          <span className="text-[#888] lap-time text-xs">Круг {bestLapRow.lap_number}</span>
+        <div className="flex items-center gap-2 px-3 py-2 bg-[#0e0e0e] border-l-2 border-[#ffb4a8]">
+          <span className="text-[#ffb4a8] text-[9px] font-bold uppercase tracking-widest">Лучший круг</span>
+          <span className="text-[#ffb4a8] lap-time text-sm font-bold ml-auto">{bestLapRow.lap_time}</span>
+          <span className="text-[#ebbbb4] lap-time text-xs">Круг {bestLapRow.lap_number}</span>
         </div>
       )}
 
@@ -60,7 +59,7 @@ export default function LapTimesTable({ lapTimes }) {
       <div className="overflow-x-auto">
         <table className="w-full text-xs lap-time border-collapse">
           <thead>
-            <tr className="text-[#555] uppercase tracking-wider text-[10px]">
+            <tr className="text-[#454747] uppercase tracking-widest text-[9px]">
               <th className="pb-2 text-left w-5">#</th>
               <th className="pb-2 text-right px-1">Время</th>
               <th className="pb-2 text-right px-1">S1</th>
@@ -77,32 +76,28 @@ export default function LapTimesTable({ lapTimes }) {
               return (
                 <tr
                   key={idx}
-                  className={`border-b border-[#1a1a1a] last:border-0 ${
-                    isBestLap ? 'bg-[#1a0033]' : ''
+                  className={`border-b border-[#201f1f] last:border-0 ${
+                    isBestLap ? 'bg-[#0e0e0e]' : ''
                   }`}
+                  style={isBestLap ? { borderLeft: '2px solid #ffb4a8' } : {}}
                 >
-                  {/* Lap number */}
                   <td className="py-1.5 text-left">
-                    <span className={`${isBestLap ? 'text-[#C084FC]' : 'text-[#555]'}`}>
+                    <span className={`${isBestLap ? 'text-[#ffb4a8]' : 'text-[#454747]'}`}>
                       {isStart ? 'S' : lap.lap_number}
                     </span>
                   </td>
-
-                  {/* Lap time */}
                   <td className={`py-1.5 text-right px-1 ${
-                    isStart ? 'text-[#555]' : lapColor(lap.lap_time)
+                    isStart ? 'text-[#454747]' : lapColor(lap.lap_time)
                   }`}>
                     {lap.lap_time || '—'}
                   </td>
-
-                  {/* Sectors */}
                   <td className={`py-1.5 text-right px-1 ${
-                    isStart ? 'text-[#555]' : sectorColor(lap.sector1, bestS1Ms)
+                    isStart ? 'text-[#454747]' : sectorColor(lap.sector1, bestS1Ms)
                   }`}>
                     {isStart ? '—' : (lap.sector1 || '—')}
                   </td>
                   <td className={`py-1.5 text-right px-1 ${
-                    isStart ? sectorColor(lap.sector2, bestS2Ms) : sectorColor(lap.sector2, bestS2Ms)
+                    sectorColor(lap.sector2, bestS2Ms)
                   }`}>
                     {lap.sector2 || '—'}
                   </td>
@@ -126,12 +121,12 @@ export default function LapTimesTable({ lapTimes }) {
       {/* Legend */}
       <div className="flex items-center gap-4 pt-1">
         <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-[#C084FC]" />
-          <span className="text-[#555] text-[10px]">Лучший круг</span>
+          <div className="w-2 h-2 bg-[#ffb4a8]" />
+          <span className="text-[#454747] text-[9px] uppercase tracking-widest">Лучший круг</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-[#00FF7F]" />
-          <span className="text-[#555] text-[10px]">Лучший сектор</span>
+          <div className="w-2 h-2 bg-[#ff5540]" />
+          <span className="text-[#454747] text-[9px] uppercase tracking-widest">Лучший сектор</span>
         </div>
       </div>
     </div>

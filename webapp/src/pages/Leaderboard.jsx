@@ -16,13 +16,13 @@ function todayDDMMYYYY() {
 
 function Avatar({ name, photoUrl, size = 32 }) {
   const initials = (name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
-  const style = { width: size, height: size, minWidth: size, minHeight: size, borderRadius: '50%', overflow: 'hidden' }
+  const style = { width: size, height: size, minWidth: size, minHeight: size, overflow: 'hidden' }
 
   if (photoUrl) {
     return <img src={photoUrl} alt={name} style={style} className="object-cover" />
   }
   return (
-    <div style={style} className="flex items-center justify-center text-[10px] font-bold bg-[#2a2a2a] text-[#aaa]">
+    <div style={style} className="flex items-center justify-center text-[10px] font-bold bg-[#353534] text-[#ebbbb4]">
       {initials}
     </div>
   )
@@ -83,26 +83,39 @@ export default function Leaderboard({ userId }) {
       {/* Header */}
       <div className="px-4 pt-5 pb-3">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-lg font-bold text-white">Рейтинг</h1>
-          <button onClick={handleRefresh} disabled={loading} className="p-2 rounded-lg bg-[#1e1e1e] text-[#888] disabled:opacity-50">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={loading ? 'animate-spin' : ''}>
+          <div>
+            <h1 className="text-xl font-bold text-[#e5e2e1] tracking-tighter leading-none">РЕЙТИНГ</h1>
+            {!loading && currentData.length > 0 && (
+              <p className="text-[#ebbbb4] text-[9px] mt-1 uppercase tracking-widest">
+                {currentData.length} пилотов
+              </p>
+            )}
+          </div>
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="p-2 bg-[#1c1b1b] text-[#ebbbb4] disabled:opacity-50 hover:bg-[#2a2a2a] transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter" className={loading ? 'animate-spin' : ''}>
               <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
             </svg>
           </button>
         </div>
 
         {/* Segment control */}
-        <div className="flex bg-[#141414] border border-[#222] rounded-xl p-1 gap-1">
+        <div className="flex bg-[#1c1b1b] p-0.5 gap-0">
           {[
             { id: SEG_ALL, label: 'Все времена' },
             { id: SEG_TODAY, label: 'Сегодня' },
-            { id: SEG_KARTS, label: '🏎️ Карты' },
+            { id: SEG_KARTS, label: 'Карты' },
           ].map((seg) => (
             <button
               key={seg.id}
               onClick={() => setSegment(seg.id)}
-              className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all duration-200 ${
-                segment === seg.id ? 'bg-[#00FF7F] text-black' : 'text-[#888] hover:text-white'
+              className={`flex-1 py-2 text-[9px] font-bold uppercase tracking-widest transition-all duration-150 ${
+                segment === seg.id
+                  ? 'bg-[#ff5540] text-white'
+                  : 'text-[#ebbbb4] hover:text-[#e5e2e1]'
               }`}
             >
               {seg.label}
@@ -120,36 +133,36 @@ export default function Leaderboard({ userId }) {
         )}
 
         {!loading && error && (
-          <div className="bg-[#1a0000] border border-[#FF444433] rounded-xl p-4 flex items-start gap-3">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
+          <div className="bg-[#0e0e0e] p-4 flex items-start gap-3" style={{ borderLeft: '3px solid #FF4444' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF4444" strokeWidth="2" strokeLinecap="square" className="shrink-0 mt-0.5">
               <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
             </svg>
             <div>
               <p className="text-[#FF4444] text-sm">{error}</p>
-              <button onClick={handleRefresh} className="text-xs text-[#888] underline mt-1">Повторить</button>
+              <button onClick={handleRefresh} className="text-[9px] text-[#ebbbb4] uppercase tracking-widest mt-1">Повторить</button>
             </div>
           </div>
         )}
 
         {!loading && !error && currentData.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
-            <div className="text-5xl">{segment === SEG_KARTS ? '🏎️' : '🏆'}</div>
-            <p className="text-white font-medium">Нет данных</p>
-            <p className="text-[#888888] text-sm text-center">
+            <div className="text-[#ff5540] text-4xl font-black tracking-tighter">—</div>
+            <p className="text-[#e5e2e1] font-bold text-sm uppercase tracking-tight">Нет данных</p>
+            <p className="text-[#ebbbb4] text-[9px] uppercase tracking-widest text-center">
               {segment === SEG_KARTS ? 'Сегодня заездов ещё не было' :
                segment === SEG_TODAY ? 'Сегодня заездов ещё не было' :
-               'Добавьте свой первый заезд'}
+               'Добавьте первый заезд'}
             </p>
           </div>
         )}
 
         {/* Leaderboard (all / today) */}
         {!loading && !error && currentData.length > 0 && segment !== SEG_KARTS && (
-          <div className="space-y-2">
+          <div>
             {currentData.length >= 3 && (
               <PodiumRow entries={currentData.slice(0, 3)} userId={userId} />
             )}
-            <div className="space-y-1.5 mt-1">
+            <div className="space-y-1.5 mt-2">
               {currentData.map((entry, idx) => {
                 const rank = idx + 1
                 const isCurrentUser = userId !== null && userId !== undefined &&
@@ -160,31 +173,36 @@ export default function Leaderboard({ userId }) {
                 return (
                   <div
                     key={`${entry.user_id}-${idx}`}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all ${
+                    className={`flex items-center gap-3 px-3 py-2.5 transition-all ${
                       isCurrentUser
-                        ? 'border-[#00FF7F44] bg-[#001a0d] border-l-[3px] border-l-[#00FF7F]'
-                        : 'border-[#222] bg-[#141414]'
+                        ? 'bg-[#0e0e0e]'
+                        : 'bg-[#1c1b1b]'
                     }`}
+                    style={isCurrentUser ? { borderLeft: '3px solid #ff5540' } : { borderLeft: '3px solid transparent' }}
                   >
-                    <div className="shrink-0 w-8 flex justify-center">
-                      <RankBadge rank={rank} />
+                    <div className="shrink-0 w-7 flex justify-center">
+                      <RankBadge rank={rank} isCurrentUser={isCurrentUser} />
                     </div>
                     <Avatar name={displayName} photoUrl={photoUrl} size={32} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className={`text-sm font-medium truncate ${isCurrentUser ? 'text-[#00FF7F]' : 'text-white'}`}>
+                        <span className={`text-sm font-bold uppercase tracking-tight truncate ${isCurrentUser ? 'text-[#ffb4a8]' : 'text-[#e5e2e1]'}`}>
                           {displayName}
                         </span>
-                        {isCurrentUser && <span className="text-[10px] text-[#00FF7F66] font-medium">Вы</span>}
+                        {isCurrentUser && (
+                          <span className="text-[8px] bg-[#ff5540] text-white px-1.5 py-0.5 font-bold uppercase tracking-widest">ВЫ</span>
+                        )}
                       </div>
-                      <div className="text-[#666] text-xs mt-0.5">
+                      <div className="text-[#454747] text-[9px] uppercase tracking-widest mt-0.5">
                         Карт #{entry.num}
                         {entry.date && <span> · {entry.date}</span>}
                       </div>
                     </div>
                     <div className="shrink-0 text-right">
-                      <div className="text-[#00FF7F] lap-time text-sm font-medium">{entry.best_lap || '—'}</div>
-                      <div className="text-[#555] text-xs">лучший</div>
+                      <div className={`lap-time text-sm font-bold ${isCurrentUser ? 'text-[#ffb4a8]' : 'text-[#ff5540]'}`}>
+                        {entry.best_lap || '—'}
+                      </div>
+                      <div className="text-[#454747] text-[9px] uppercase tracking-widest">лучший</div>
                     </div>
                   </div>
                 )
@@ -196,45 +214,43 @@ export default function Leaderboard({ userId }) {
         {/* Karts today */}
         {!loading && !error && currentData.length > 0 && segment === SEG_KARTS && (
           <div className="space-y-1.5">
-            <p className="text-[#555] text-xs mb-3">Лучший круг каждого карта по всем заездам сегодня</p>
+            <p className="text-[#454747] text-[9px] mb-3 uppercase tracking-widest">Лучший круг каждого карта за сегодня</p>
             {currentData.map((kart, idx) => {
               const rank = idx + 1
               const isTop3 = rank <= 3
               return (
                 <div
                   key={kart.num}
-                  className={`flex items-center gap-3 px-3 py-3 rounded-xl border transition-all ${
-                    isTop3 ? 'border-[#00FF7F33] bg-[#001a0d]' : 'border-[#222] bg-[#141414]'
+                  className={`flex items-center gap-3 px-3 py-3 transition-all ${
+                    isTop3 ? 'bg-[#0e0e0e]' : 'bg-[#1c1b1b]'
                   }`}
+                  style={isTop3 ? { borderLeft: '3px solid #ff5540' } : { borderLeft: '3px solid transparent' }}
                 >
-                  {/* Rank */}
-                  <div className="shrink-0 w-8 flex justify-center">
+                  <div className="shrink-0 w-7 flex justify-center">
                     <RankBadge rank={rank} />
                   </div>
 
                   {/* Cart number badge */}
-                  <div className={`shrink-0 w-14 h-12 rounded-xl flex items-center justify-center font-bold text-base ${
-                    rank === 1 ? 'bg-[#2d2000] text-[#FFD700]' :
-                    rank === 2 ? 'bg-[#1a2d35] text-[#C0C0C0]' :
-                    rank === 3 ? 'bg-[#2d1800] text-[#CD7F32]' :
-                    'bg-[#1e1e1e] text-[#ccc]'
+                  <div className={`shrink-0 w-14 h-10 flex items-center justify-center font-black text-base tracking-tighter ${
+                    rank === 1 ? 'bg-[#ff5540] text-white' :
+                    rank === 2 ? 'bg-[#2a2a2a] text-[#e5e2e1]' :
+                    rank === 3 ? 'bg-[#201f1f] text-[#ebbbb4]' :
+                    'bg-[#1c1b1b] text-[#454747]'
                   }`}>
                     #{kart.num}
                   </div>
 
-                  {/* Races count */}
                   <div className="flex-1 min-w-0">
-                    <div className="text-[#666] text-xs">
+                    <div className="text-[#454747] text-[9px] uppercase tracking-widest">
                       {kart.races} {pluralRaces(kart.races)} сегодня
                     </div>
                   </div>
 
-                  {/* Best lap */}
                   <div className="shrink-0 text-right">
-                    <div className={`lap-time text-sm font-bold ${isTop3 ? 'text-[#00FF7F]' : 'text-[#ccc]'}`}>
+                    <div className={`lap-time text-sm font-bold ${isTop3 ? 'text-[#ff5540]' : 'text-[#e5e2e1]'}`}>
                       {kart.best_lap || '—'}
                     </div>
-                    <div className="text-[#555] text-xs">лучший</div>
+                    <div className="text-[#454747] text-[9px] uppercase tracking-widest">лучший</div>
                   </div>
                 </div>
               )
@@ -246,14 +262,20 @@ export default function Leaderboard({ userId }) {
   )
 }
 
-function RankBadge({ rank }) {
-  if (rank === 1) return <span className="text-2xl leading-none">🥇</span>
-  if (rank === 2) return <span className="text-2xl leading-none">🥈</span>
-  if (rank === 3) return <span className="text-2xl leading-none">🥉</span>
+function RankBadge({ rank, isCurrentUser }) {
+  if (rank === 1) return (
+    <span className="text-sm font-black text-[#ff5540] lap-time">01</span>
+  )
+  if (rank === 2) return (
+    <span className="text-sm font-black text-[#e5e2e1] lap-time">02</span>
+  )
+  if (rank === 3) return (
+    <span className="text-sm font-black text-[#ebbbb4] lap-time">03</span>
+  )
   return (
-    <div className="w-7 h-7 rounded-full bg-[#1e1e1e] flex items-center justify-center">
-      <span className="text-[#888] text-xs font-bold lap-time">{rank}</span>
-    </div>
+    <span className={`text-xs font-bold lap-time ${isCurrentUser ? 'text-[#ffb4a8]' : 'text-[#454747]'}`}>
+      {String(rank).padStart(2, '0')}
+    </span>
   )
 }
 
@@ -265,7 +287,7 @@ function pluralRaces(n) {
 
 function PodiumRow({ entries, userId }) {
   const order = [entries[1], entries[0], entries[2]]
-  const heights = ['h-20', 'h-24', 'h-16']
+  const heights = [80, 96, 64]
   const ranks = [2, 1, 3]
 
   return (
@@ -282,22 +304,32 @@ function PodiumRow({ entries, userId }) {
         return (
           <div key={i} className="flex flex-col items-center gap-1 flex-1">
             {/* Avatar */}
-            <Avatar name={displayName} photoUrl={photoUrl} size={36} />
+            <Avatar name={displayName} photoUrl={photoUrl} size={rank === 1 ? 44 : 36} />
             {/* Name */}
-            <div className={`text-xs font-medium text-center truncate max-w-[80px] ${
-              isCurrentUser ? 'text-[#00FF7F]' : 'text-[#ccc]'
+            <div className={`text-[9px] font-bold uppercase tracking-widest text-center truncate max-w-[80px] ${
+              rank === 1 ? 'text-[#ffb4a8]' : isCurrentUser ? 'text-[#ff5540]' : 'text-[#ebbbb4]'
             }`}>
               {displayName}
             </div>
             {/* Lap */}
-            <div className="text-[#00FF7F] lap-time text-xs">{entry.best_lap || '—'}</div>
+            <div className={`lap-time text-[9px] font-bold ${rank === 1 ? 'text-[#ff5540]' : 'text-[#454747]'}`}>
+              {entry.best_lap || '—'}
+            </div>
             {/* Podium block */}
-            <div className={`${height} w-full rounded-t-lg flex items-end justify-center pb-2 ${
-              rank === 1 ? 'bg-gradient-to-t from-[#1a1200] to-[#2d2000] border border-[#FFD700]/30' :
-              rank === 2 ? 'bg-gradient-to-t from-[#0f1a1f] to-[#1a2d35] border border-[#C0C0C0]/20' :
-              'bg-gradient-to-t from-[#1a0d00] to-[#2d1800] border border-[#CD7F32]/20'
-            }`}>
-              <span className="text-2xl">{rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉'}</span>
+            <div
+              style={{ height }}
+              className={`w-full flex items-start justify-center pt-2 relative overflow-hidden ${
+                rank === 1
+                  ? 'bg-[#0e0e0e]'
+                  : 'bg-[#1c1b1b]'
+              }`}
+              {...(rank === 1 ? { style: { height, borderTop: '2px solid #ff5540' } } : { style: { height } })}
+            >
+              <span className={`text-2xl font-black tracking-tighter ${
+                rank === 1 ? 'text-[#ff5540]' : 'text-[#353534]'
+              }`}>
+                {rank}
+              </span>
             </div>
           </div>
         )

@@ -20,33 +20,27 @@ function todayDDMMYYYY() {
 export default function AddRace({ userId, userName, targetUserId, targetUserName, onDone }) {
   const [step, setStep] = useState(STEP_DATE)
 
-  // Step 0: dates
   const [archive, setArchive] = useState([])
   const [archiveLoading, setArchiveLoading] = useState(false)
   const [archiveError, setArchiveError] = useState(null)
 
-  // Step 1: races
   const [selectedDay, setSelectedDay] = useState(null)
   const [selectedRace, setSelectedRace] = useState(null)
 
-  // Step 2: carts
   const [carts, setCarts] = useState([])
   const [cartsLoading, setCartsLoading] = useState(false)
   const [cartsError, setCartsError] = useState(null)
   const [selectedCart, setSelectedCart] = useState(null)
 
-  // Step 3: result
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
 
   const today = todayDDMMYYYY()
 
-  // Who are we adding for
   const forUserId = targetUserId ?? userId
   const forUserName = targetUserName ?? userName ?? 'Я'
   const isForSelf = String(forUserId) === String(userId)
 
-  // Load archive on mount
   useEffect(() => {
     async function load() {
       setArchiveLoading(true)
@@ -63,7 +57,6 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
     load()
   }, [])
 
-  // Sort archive so today comes first, then descending
   const sortedArchive = [...archive].sort((a, b) => {
     const aIsToday = a.date === today
     const bIsToday = b.date === today
@@ -114,9 +107,7 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
         (c) => String(c.num) === String(cart.number)
       ) || fullRace[0]
 
-      if (!competitor) {
-        throw new Error('Участник не найден в заезде')
-      }
+      if (!competitor) throw new Error('Участник не найден в заезде')
 
       const payload = {
         user_id: forUserId,
@@ -180,30 +171,29 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
   }, null)
 
   const isBestCart = (cart) => bestLapCart && cart.number === bestLapCart.number
-
   const stepIndex = ALL_STEPS.indexOf(step)
 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-4 pt-5 pb-3">
-        {/* Step breadcrumb */}
-        <div className="flex items-center gap-2 mb-3">
+      <div className="px-4 pt-5 pb-3" style={{ borderBottom: '1px solid #201f1f' }}>
+        {/* Step indicator */}
+        <div className="flex items-center gap-1 mb-3">
           {ALL_STEPS.map((s, i) => (
-            <div key={s} className="flex items-center gap-2">
+            <div key={s} className="flex items-center gap-1">
               <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                className={`w-5 h-5 flex items-center justify-center text-[9px] font-black transition-all ${
                   s === step
-                    ? 'bg-[#00FF7F] text-black'
+                    ? 'bg-[#ff5540] text-white'
                     : stepIndex > i
-                    ? 'bg-[#004d26] text-[#00FF7F] text-[10px]'
-                    : 'bg-[#1e1e1e] text-[#555]'
+                    ? 'bg-[#201f1f] text-[#ff5540]'
+                    : 'bg-[#1c1b1b] text-[#353534]'
                 }`}
               >
                 {stepIndex > i ? '✓' : i + 1}
               </div>
               {i < ALL_STEPS.length - 1 && (
-                <div className={`w-4 h-px ${stepIndex > i ? 'bg-[#004d26]' : 'bg-[#1e1e1e]'}`} />
+                <div className={`w-4 h-px ${stepIndex > i ? 'bg-[#ff5540]' : 'bg-[#1c1b1b]'}`} />
               )}
             </div>
           ))}
@@ -213,16 +203,16 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
           <button
             onClick={handleBack}
             disabled={saving}
-            className="p-2 rounded-lg bg-[#1e1e1e] text-[#888] disabled:opacity-50"
+            className="p-2 bg-[#1c1b1b] text-[#ebbbb4] disabled:opacity-50 hover:bg-[#2a2a2a] transition-colors"
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter">
               <polyline points="15 18 9 12 15 6"/>
             </svg>
           </button>
           <div>
-            <h1 className="text-lg font-bold text-white">Добавить заезд</h1>
-            <p className="text-[#888888] text-xs mt-0.5">
-              {!isForSelf && <span className="text-[#00FF7F]">для {forUserName} · </span>}
+            <h1 className="text-base font-bold text-[#e5e2e1] uppercase tracking-tight">Добавить заезд</h1>
+            <p className="text-[#ebbbb4] text-[9px] uppercase tracking-widest mt-0.5">
+              {!isForSelf && <span className="text-[#ff5540]">для {forUserName} · </span>}
               {step === STEP_DATE && 'Выберите дату'}
               {step === STEP_RACE && `${selectedDay?.date} — выберите заезд`}
               {step === STEP_CART && `${selectedRace?.number} — выберите карт`}
@@ -233,11 +223,11 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4 tab-content">
+      <div className="flex-1 overflow-y-auto px-4 py-4 tab-content">
 
         {/* Step 0: Date list */}
         {step === STEP_DATE && (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {archiveLoading && (
               <div className="flex justify-center py-16">
                 <LoadingSpinner size="lg" label="Загрузка дат..." />
@@ -259,29 +249,30 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
                 <button
                   key={day.date}
                   onClick={() => handleSelectDate(day)}
-                  className={`w-full text-left px-4 py-3.5 rounded-xl border transition-all duration-150 active:scale-[0.98] ${
+                  className={`w-full text-left px-4 py-3 transition-all duration-150 ${
                     isToday
-                      ? 'border-[#00FF7F33] bg-[#001a0d]'
-                      : 'border-[#222222] bg-[#141414]'
+                      ? 'bg-[#0e0e0e]'
+                      : 'bg-[#1c1b1b] hover:bg-[#2a2a2a]'
                   }`}
+                  style={isToday ? { borderLeft: '3px solid #ff5540' } : { borderLeft: '3px solid transparent' }}
                 >
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className={`font-semibold text-sm ${isToday ? 'text-[#00FF7F]' : 'text-white'}`}>
+                        <span className={`font-bold text-sm tracking-tight ${isToday ? 'text-[#ffb4a8]' : 'text-[#e5e2e1]'}`}>
                           {day.date}
                         </span>
                         {isToday && (
-                          <span className="text-[10px] font-bold uppercase tracking-wider bg-[#00FF7F20] text-[#00FF7F] px-2 py-0.5 rounded-full">
+                          <span className="text-[8px] font-black uppercase tracking-widest bg-[#ff5540] text-white px-1.5 py-0.5">
                             Сегодня
                           </span>
                         )}
                       </div>
-                      <div className="text-[#888888] text-xs mt-0.5">
+                      <div className="text-[#454747] text-[9px] uppercase tracking-widest mt-0.5">
                         {day.races?.length || 0} {pluralRaces(day.races?.length || 0)}
                       </div>
                     </div>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#353534" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter">
                       <polyline points="9 18 15 12 9 6"/>
                     </svg>
                   </div>
@@ -296,16 +287,17 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
 
         {/* Step 1: Race list */}
         {step === STEP_RACE && selectedDay && (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {(selectedDay.races || []).map((race) => (
               <button
                 key={race.href}
                 onClick={() => handleSelectRace(race)}
-                className="w-full text-left px-4 py-3.5 rounded-xl border border-[#222222] bg-[#141414] transition-all duration-150 active:scale-[0.98]"
+                className="w-full text-left px-4 py-3 bg-[#1c1b1b] hover:bg-[#2a2a2a] transition-all duration-150"
+                style={{ borderLeft: '3px solid transparent' }}
               >
                 <div className="flex items-center justify-between">
-                  <div className="text-white font-medium text-sm">{race.number}</div>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <div className="text-[#e5e2e1] font-bold text-sm tracking-tight">{race.number}</div>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#353534" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter">
                     <polyline points="9 18 15 12 9 6"/>
                   </svg>
                 </div>
@@ -319,7 +311,7 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
 
         {/* Step 2: Cart list */}
         {step === STEP_CART && (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {cartsLoading && (
               <div className="flex justify-center py-16">
                 <LoadingSpinner size="lg" label="Загрузка картов..." />
@@ -334,32 +326,31 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
                 <button
                   key={cart.id}
                   onClick={() => handleSelectCart(cart)}
-                  className={`w-full text-left px-4 py-3.5 rounded-xl border transition-all duration-150 active:scale-[0.98] ${
-                    isBest
-                      ? 'border-[#00FF7F33] bg-[#001a0d]'
-                      : 'border-[#222222] bg-[#141414]'
+                  className={`w-full text-left px-4 py-3 transition-all duration-150 ${
+                    isBest ? 'bg-[#0e0e0e]' : 'bg-[#1c1b1b] hover:bg-[#2a2a2a]'
                   }`}
+                  style={isBest ? { borderLeft: '3px solid #ff5540' } : { borderLeft: '3px solid transparent' }}
                 >
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-white font-semibold text-sm">
+                        <span className={`font-bold text-sm tracking-tight ${isBest ? 'text-[#ffb4a8]' : 'text-[#e5e2e1]'}`}>
                           Карт #{cart.id || cart.number}
                         </span>
                         {isBest && (
-                          <span className="text-[10px] font-bold uppercase tracking-wider bg-[#00FF7F20] text-[#00FF7F] px-2 py-0.5 rounded-full">
+                          <span className="text-[8px] font-black uppercase tracking-widest bg-[#ff5540] text-white px-1.5 py-0.5">
                             Лучший
                           </span>
                         )}
                       </div>
                       {cart.position && (
-                        <div className="text-[#888888] text-xs mt-0.5">
+                        <div className="text-[#454747] text-[9px] uppercase tracking-widest mt-0.5">
                           Позиция {cart.position}
                         </div>
                       )}
                     </div>
                     <div className="text-right">
-                      <div className={`lap-time text-sm font-medium ${isBest ? 'text-[#00FF7F]' : 'text-[#ccc]'}`}>
+                      <div className={`lap-time text-sm font-bold ${isBest ? 'text-[#ff5540]' : 'text-[#ebbbb4]'}`}>
                         {cart.best_lap || '—'}
                       </div>
                     </div>
@@ -379,34 +370,34 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
             {saving && (
               <div className="flex flex-col items-center gap-4">
                 <LoadingSpinner size="lg" />
-                <p className="text-[#888888]">Сохранение результата...</p>
+                <p className="text-[#ebbbb4] text-[9px] uppercase tracking-widest">Сохранение результата...</p>
               </div>
             )}
 
             {!saving && saveResult?.ok && (
               <div className="w-full">
                 <div className="flex justify-center mb-6">
-                  <div className="w-20 h-20 rounded-full bg-[#001a0d] border-2 border-[#00FF7F] flex items-center justify-center">
-                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#00FF7F" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <div className="w-16 h-16 bg-[#0e0e0e] flex items-center justify-center" style={{ borderTop: '3px solid #ff5540' }}>
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff5540" strokeWidth="2.5" strokeLinecap="square" strokeLinejoin="miter">
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
                   </div>
                 </div>
 
-                <h2 className="text-center text-xl font-bold text-white mb-1">Сохранено!</h2>
-                <p className="text-center text-[#888888] text-sm mb-1">Результат успешно добавлен</p>
+                <h2 className="text-center text-xl font-black text-[#e5e2e1] mb-1 uppercase tracking-tight">Сохранено!</h2>
+                <p className="text-center text-[#ebbbb4] text-[9px] uppercase tracking-widest mb-1">Результат успешно добавлен</p>
                 {!isForSelf && (
-                  <p className="text-center text-[#00FF7F] text-xs mb-5">для {forUserName}</p>
+                  <p className="text-center text-[#ff5540] text-[9px] uppercase tracking-widest mb-5">для {forUserName}</p>
                 )}
                 {isForSelf && <div className="mb-5" />}
 
                 {saveResult.data && (
-                  <div className="bg-[#141414] border border-[#222222] rounded-xl p-4 mb-6">
+                  <div className="bg-[#0e0e0e] p-4 mb-6" style={{ borderLeft: '3px solid #ff5540' }}>
                     <div className="grid grid-cols-2 gap-3">
                       <InfoRow label="Дата" value={saveResult.data.date} />
                       <InfoRow label="Заезд" value={saveResult.data.race_number} />
                       <InfoRow label="Карт" value={`#${saveResult.data.num}`} />
-                      <InfoRow label="Позиция" value={`P${saveResult.data.pos}`} highlight="orange" />
+                      <InfoRow label="Позиция" value={`P${saveResult.data.pos}`} highlight="primary" />
                       <InfoRow label="Лучший круг" value={saveResult.data.best_lap} highlight="accent" mono />
                       <InfoRow label="Кругов" value={saveResult.data.laps} />
                     </div>
@@ -416,14 +407,14 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
                 <div className="flex flex-col gap-2">
                   <button
                     onClick={handleReset}
-                    className="w-full py-3.5 rounded-xl bg-[#00FF7F] text-black font-bold text-sm"
+                    className="w-full py-3 bg-[#ff5540] text-white font-black text-sm uppercase tracking-widest hover:bg-[#e84b38] transition-colors"
                   >
                     Добавить ещё
                   </button>
                   {onDone && (
                     <button
                       onClick={onDone}
-                      className="w-full py-3.5 rounded-xl border border-[#333] text-[#888] font-medium text-sm"
+                      className="w-full py-3 bg-[#1c1b1b] text-[#ebbbb4] font-bold text-sm uppercase tracking-widest hover:bg-[#2a2a2a] transition-colors"
                     >
                       Готово
                     </button>
@@ -435,31 +426,29 @@ export default function AddRace({ userId, userName, targetUserId, targetUserName
             {!saving && saveResult && !saveResult.ok && (
               <div className="w-full">
                 <div className="flex justify-center mb-6">
-                  <div className="w-20 h-20 rounded-full bg-[#1a0000] border-2 border-[#FF4444] flex items-center justify-center">
-                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#FF4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <div className="w-16 h-16 bg-[#0e0e0e] flex items-center justify-center" style={{ borderTop: '3px solid #FF4444' }}>
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FF4444" strokeWidth="2.5" strokeLinecap="square" strokeLinejoin="miter">
                       <line x1="18" y1="6" x2="6" y2="18"/>
                       <line x1="6" y1="6" x2="18" y2="18"/>
                     </svg>
                   </div>
                 </div>
 
-                <h2 className="text-center text-xl font-bold text-white mb-1">Ошибка</h2>
-                <p className="text-center text-[#FF4444] text-sm mb-6 break-words">
-                  {saveResult.error}
-                </p>
+                <h2 className="text-center text-xl font-black text-[#e5e2e1] mb-1 uppercase tracking-tight">Ошибка</h2>
+                <p className="text-center text-[#FF4444] text-sm mb-6 break-words">{saveResult.error}</p>
 
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                   <button
                     onClick={() => setStep(STEP_CART)}
-                    className="flex-1 py-3.5 rounded-xl border border-[#333] text-[#888] font-medium text-sm"
+                    className="flex-1 py-3 bg-[#1c1b1b] text-[#ebbbb4] font-bold text-sm uppercase tracking-widest hover:bg-[#2a2a2a] transition-colors"
                   >
                     Назад
                   </button>
                   <button
                     onClick={handleReset}
-                    className="flex-1 py-3.5 rounded-xl bg-[#1e1e1e] text-white font-medium text-sm"
+                    className="flex-1 py-3 bg-[#2a2a2a] text-[#e5e2e1] font-bold text-sm uppercase tracking-widest hover:bg-[#353534] transition-colors"
                   >
-                    Начать заново
+                    Заново
                   </button>
                 </div>
               </div>
@@ -479,9 +468,9 @@ function pluralRaces(n) {
 
 function ErrorBanner({ message, onRetry }) {
   return (
-    <div className="bg-[#1a0000] border border-[#FF444433] rounded-xl p-4 flex flex-col gap-3">
+    <div className="bg-[#0e0e0e] p-4 flex flex-col gap-3" style={{ borderLeft: '3px solid #FF4444' }}>
       <div className="flex items-start gap-3">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF4444" strokeWidth="2" strokeLinecap="square" className="shrink-0 mt-0.5">
           <circle cx="12" cy="12" r="10"/>
           <line x1="12" y1="8" x2="12" y2="12"/>
           <line x1="12" y1="16" x2="12.01" y2="16"/>
@@ -489,7 +478,7 @@ function ErrorBanner({ message, onRetry }) {
         <p className="text-[#FF4444] text-sm">{message}</p>
       </div>
       {onRetry && (
-        <button onClick={onRetry} className="self-start text-xs text-[#888] underline">
+        <button onClick={onRetry} className="self-start text-[9px] text-[#ebbbb4] uppercase tracking-widest">
           Повторить
         </button>
       )}
@@ -500,23 +489,23 @@ function ErrorBanner({ message, onRetry }) {
 function EmptyState({ message }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 gap-3">
-      <div className="text-4xl">🏎️</div>
-      <p className="text-[#888888] text-sm">{message}</p>
+      <div className="text-[#ff5540] text-4xl font-black">—</div>
+      <p className="text-[#ebbbb4] text-[9px] uppercase tracking-widest">{message}</p>
     </div>
   )
 }
 
 function InfoRow({ label, value, highlight, mono }) {
   const valClass = [
-    'text-sm font-medium',
+    'text-sm font-bold tracking-tight',
     mono ? 'lap-time' : '',
-    highlight === 'accent' ? 'text-[#00FF7F]' :
-    highlight === 'orange' ? 'text-[#FF6B00]' :
-    'text-white',
+    highlight === 'accent' ? 'text-[#ff5540]' :
+    highlight === 'primary' ? 'text-[#ffb4a8]' :
+    'text-[#e5e2e1]',
   ].join(' ')
   return (
     <div>
-      <div className="text-[#666] text-xs mb-0.5">{label}</div>
+      <div className="text-[#454747] text-[9px] uppercase tracking-widest mb-0.5">{label}</div>
       <div className={valClass}>{value ?? '—'}</div>
     </div>
   )
