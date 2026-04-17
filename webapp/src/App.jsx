@@ -2,12 +2,11 @@ import { useState, useEffect } from 'react'
 import { useTelegram } from './hooks/useTelegram.js'
 import { setUserId, registerUser } from './api/client.js'
 import BottomNav from './components/BottomNav.jsx'
-import AddRace from './pages/AddRace.jsx'
 import MyStats from './pages/MyStats.jsx'
 import Leaderboard from './pages/Leaderboard.jsx'
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('add')
+  const [activeTab, setActiveTab] = useState('stats')
   const { userId, userName, isDevMode } = useTelegram()
 
   // Sync userId to API client and register Telegram name
@@ -44,11 +43,6 @@ export default function App() {
 
       {/* Page content */}
       <div className="flex-1 overflow-hidden" style={{ paddingBottom: '64px' }}>
-        {activeTab === 'add' && (
-          <div className="h-full overflow-hidden flex flex-col tab-content">
-            <AddRace userId={userId} userName={userName} />
-          </div>
-        )}
         {activeTab === 'stats' && (
           <div className="h-full overflow-hidden flex flex-col tab-content">
             <MyStats userId={userId} userName={userName} />

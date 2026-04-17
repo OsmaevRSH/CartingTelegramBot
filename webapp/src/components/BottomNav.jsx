@@ -1,20 +1,9 @@
 export default function BottomNav({ activeTab, onTabChange }) {
   const tabs = [
     {
-      id: 'add',
-      label: 'Добавить',
-      icon: (active) => (
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="8" x2="12" y2="16" />
-          <line x1="8" y1="12" x2="16" y2="12" />
-        </svg>
-      ),
-    },
-    {
       id: 'stats',
       label: 'Заезды',
-      icon: (active) => (
+      icon: () => (
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <line x1="18" y1="20" x2="18" y2="10" />
           <line x1="12" y1="20" x2="12" y2="4" />
@@ -25,7 +14,7 @@ export default function BottomNav({ activeTab, onTabChange }) {
     {
       id: 'leaderboard',
       label: 'Рейтинг',
-      icon: (active) => (
+      icon: () => (
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M8 21H16M12 21V13" />
           <path d="M20 7V5H4V7C4 10.3 6.7 13 10 13H14C17.3 13 20 10.3 20 7Z" />
@@ -46,9 +35,7 @@ export default function BottomNav({ activeTab, onTabChange }) {
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
               className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors duration-150 ${
-                isActive
-                  ? 'text-[#00FF7F]'
-                  : 'text-[#666666]'
+                isActive ? 'text-[#00FF7F]' : 'text-[#666666]'
               }`}
             >
               {tab.icon(isActive)}
