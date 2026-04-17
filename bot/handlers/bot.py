@@ -97,30 +97,43 @@ def _format_competitor_info(comp_data: tuple) -> str:
 async def _render_leaderboard(
     context: ContextTypes.DEFAULT_TYPE, chat_id: int, competitors: list, title: str
 ) -> str:
-    """Рендерит HTML-текст таблицы лидеров."""
-    text = f"🏆 <b>{html.escape(title)}</b> 🏆\n"
-    text += "<pre>\n"
-    text += f"{'#':^2} {'Гонщик':<22} {'Карт':<6} {'Время':<8}\n"
-    text += f"{'--':^2} {'----------------------':<22} {'------':<6} {'--------':<8}\n"
+    """Рендерит HTML-текст таблицы лидеров в стиле F1."""
+    MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
+    POSITION_STYLE = {1: "🔴", 2: "🟡", 3: "⚪️"}
+
+    text = f"🏎️  <b>{html.escape(title)}</b>\n"
+    text += "─────────────────────\n"
+
     for i, comp in enumerate(competitors, 1):
         user_id, comp_date, race_number, num, name, display_name, theor_lap, theor_lap_formatted, best_lap, pos = comp
-        show_name = "Неизвестный"
+
+        show_name = None
         if name and name.strip() and not display_name.startswith("Карт #"):
-            show_name = name[:22]
+            show_name = name.strip()
         else:
             try:
                 chat_member = await context.bot.get_chat_member(chat_id, user_id)
                 if chat_member.user.full_name:
-                    show_name = chat_member.user.full_name[:22]
+                    show_name = chat_member.user.full_name
                 elif chat_member.user.username:
-                    show_name = f"@{chat_member.user.username}"[:22]
-                else:
-                    show_name = f"ID:{user_id}"[:22]
+                    show_name = f"@{chat_member.user.username}"
             except Exception:
-                show_name = f"ID:{user_id}"[:22]
-        cart_num = f"#{num}"[:6]
-        text += f"{i:^2} {html.escape(show_name):<22} {cart_num:<6} {best_lap:<8}\n"
-    text += "</pre>\n"
+                pass
+        if not show_name:
+            show_name = f"ID:{user_id}"
+
+        medal = MEDALS.get(i, f"{i}.")
+        dot = POSITION_STYLE.get(i, "⚫️")
+
+        text += (
+            f"{medal} <b>{html.escape(show_name)}</b>\n"
+            f"   {dot} Карт <code>#{html.escape(str(num))}</code>  ⏱ <code>{html.escape(str(best_lap))}</code>\n"
+        )
+
+        if i < len(competitors):
+            text += "\n"
+
+    text += "─────────────────────\n"
     return text
 
 
@@ -785,7 +798,6 @@ async def best_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
     text = await _render_leaderboard(context, chat_id, competitors, "РЕЙТИНГ ЛУЧШИХ ГОНЩИКОВ")
-    text += "⏱️ Рейтинг по лучшему кругу"
     await _send_message_with_thread(context, update, text, parse_mode=ParseMode.HTML)
 
 
@@ -804,7 +816,6 @@ async def best_today_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     chat_id = update.effective_chat.id
     text = await _render_leaderboard(context, chat_id, competitors, f"РЕЙТИНГ ЗА СЕГОДНЯ ({today})")
-    text += "⏱️ Рейтинг по лучшему кругу за сегодня"
     await _send_message_with_thread(context, update, text, parse_mode=ParseMode.HTML)
 
 
