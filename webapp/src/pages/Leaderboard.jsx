@@ -196,7 +196,7 @@ export default function Leaderboard({ userId }) {
         {/* Karts today */}
         {!loading && !error && currentData.length > 0 && segment === SEG_KARTS && (
           <div className="space-y-1.5">
-            <p className="text-[#555] text-xs mb-3">Карты отсортированы по лучшему кругу сегодня</p>
+            <p className="text-[#555] text-xs mb-3">Лучший круг каждого карта по всем заездам сегодня</p>
             {currentData.map((kart, idx) => {
               const rank = idx + 1
               const isTop3 = rank <= 3
@@ -212,28 +212,20 @@ export default function Leaderboard({ userId }) {
                     <RankBadge rank={rank} />
                   </div>
 
-                  {/* Cart number */}
-                  <div className={`shrink-0 w-12 h-12 rounded-xl flex items-center justify-center font-bold text-sm ${
+                  {/* Cart number badge */}
+                  <div className={`shrink-0 w-14 h-12 rounded-xl flex items-center justify-center font-bold text-base ${
                     rank === 1 ? 'bg-[#2d2000] text-[#FFD700]' :
                     rank === 2 ? 'bg-[#1a2d35] text-[#C0C0C0]' :
                     rank === 3 ? 'bg-[#2d1800] text-[#CD7F32]' :
-                    'bg-[#1e1e1e] text-[#888]'
+                    'bg-[#1e1e1e] text-[#ccc]'
                   }`}>
                     #{kart.num}
                   </div>
 
-                  {/* Info */}
+                  {/* Races count */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      {kart.best_driver_photo ? (
-                        <Avatar name={kart.best_driver} photoUrl={kart.best_driver_photo} size={18} />
-                      ) : null}
-                      <span className="text-[#888] text-xs truncate">
-                        {kart.best_driver || 'Неизвестный гонщик'}
-                      </span>
-                    </div>
-                    <div className="text-[#555] text-xs mt-0.5">
-                      {kart.drivers} {pluralDrivers(kart.drivers)}
+                    <div className="text-[#666] text-xs">
+                      {kart.races} {pluralRaces(kart.races)} сегодня
                     </div>
                   </div>
 
@@ -265,10 +257,10 @@ function RankBadge({ rank }) {
   )
 }
 
-function pluralDrivers(n) {
-  if (n % 10 === 1 && n % 100 !== 11) return 'гонщик'
-  if ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) return 'гонщика'
-  return 'гонщиков'
+function pluralRaces(n) {
+  if (n % 10 === 1 && n % 100 !== 11) return 'заезд'
+  if ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) return 'заезда'
+  return 'заездов'
 }
 
 function PodiumRow({ entries, userId }) {
