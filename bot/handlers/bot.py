@@ -836,10 +836,14 @@ async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Отправляет сообщение с инлайн-кнопкой для открытия Mini App."""
     await _delete_command_message(update, context)
 
+    bot_username = context.bot.username
+    # Используем t.me deeplink — работает в каналах, группах и личных чатах.
+    # Для этого в BotFather нужно зарегистрировать Mini App с shortname "app":
+    #   /newapp → выбрать бота → shortname: app → URL: https://carting.ltheresi.com
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(
             "🏎️ Открыть Mini App",
-            web_app=WebAppInfo(url="https://carting.ltheresi.com"),
+            url=f"https://t.me/{bot_username}/app",
         )
     ]])
     await _send_message_with_thread(
