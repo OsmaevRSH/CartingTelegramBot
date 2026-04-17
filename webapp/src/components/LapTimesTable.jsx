@@ -67,7 +67,7 @@ export default function LapTimesTable({ lapTimes }) {
       )}
 
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto scrollbar-hide">
         <table className="w-full text-xs lap-time border-collapse">
           <thead>
             <tr className="text-[#454747] uppercase tracking-widest text-[9px]">
@@ -143,7 +143,7 @@ export default function LapTimesTable({ lapTimes }) {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 pt-1">
+      <div className="flex items-center gap-4 pt-2 pb-1">
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2" style={{ background: '#B370FF' }} />
           <span className="text-[#454747] text-[9px] uppercase tracking-widest">Личный рекорд</span>
