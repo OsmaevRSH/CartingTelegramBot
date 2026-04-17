@@ -1,48 +1,47 @@
-import sqlite3
-from pathlib import Path
+import psycopg2
+import psycopg2.extras
+from contextlib import contextmanager
 from typing import Optional, List, Dict, Any
 import json
 
 try:
-    from core.config.config import DATABASE_PATH
-    DB_FILE = Path(DATABASE_PATH)
+    from core.config.config import DATABASE_URL
 except ImportError:
-    DB_FILE = Path(__file__).parent.parent.parent / "data" / "races.db"
+    import os
+    DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 
+@contextmanager
 def _get_conn():
-    """Получает соединение с базой данных."""
-    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if not DB_FILE.exists():
-        DB_FILE.touch(mode=0o666)
-    conn = sqlite3.connect(DB_FILE)
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    """Контекстный менеджер для соединения с PostgreSQL."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def clear_db():
     """Полностью очищает базу данных."""
     with _get_conn() as conn:
-        conn.execute("DROP TABLE IF EXISTS user_competitors")
-        conn.commit()
+        cur = conn.cursor()
+        cur.execute("DROP TABLE IF EXISTS user_competitors")
 
 
 def init_db():
-    """Ensure SQLite schema exists and apply migrations."""
-    print(f"🗃️  Инициализация базы данных: {DB_FILE}")
-
-    try:
-        import os
-        if DB_FILE.exists():
-            os.chmod(DB_FILE, 0o666)
-    except Exception:
-        pass
+    """Ensure PostgreSQL schema exists and apply migrations."""
+    print(f"🗃️  Инициализация базы данных PostgreSQL")
 
     with _get_conn() as conn:
-        conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """
             CREATE TABLE IF NOT EXISTS user_competitors (
-                user_id INTEGER,
+                user_id BIGINT,
                 date TEXT,
                 race_number TEXT,
                 race_href TEXT,
@@ -63,36 +62,32 @@ def init_db():
             )
             """
         )
-        conn.commit()
 
-        try:
-            conn.execute("ALTER TABLE user_competitors ADD COLUMN best_lap_ms INTEGER")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass
+        cur.execute(
+            """
+            ALTER TABLE user_competitors
+            ADD COLUMN IF NOT EXISTS best_lap_ms INTEGER
+            """
+        )
 
-        rows = conn.execute(
-            "SELECT rowid, best_lap FROM user_competitors WHERE best_lap_ms IS NULL AND best_lap IS NOT NULL AND best_lap != ''"
-        ).fetchall()
+        cur.execute(
+            """
+            SELECT ctid, best_lap FROM user_competitors
+            WHERE best_lap_ms IS NULL AND best_lap IS NOT NULL AND best_lap != ''
+            """
+        )
+        rows = cur.fetchall()
         if rows:
-            for rowid, best_lap in rows:
+            for ctid, best_lap in rows:
                 ms = _time_string_to_ms(best_lap)
                 if ms < 999999999:
-                    conn.execute(
-                        "UPDATE user_competitors SET best_lap_ms = ? WHERE rowid = ?",
-                        (ms, rowid),
+                    cur.execute(
+                        "UPDATE user_competitors SET best_lap_ms = %s WHERE ctid = %s",
+                        (ms, ctid),
                     )
-            conn.commit()
             print(f"✅ Мигрировано {len(rows)} записей best_lap_ms")
 
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='user_competitors'"
-        )
-        if cursor.fetchone():
-            print("✅ База данных успешно инициализирована")
-        else:
-            print("❌ Ошибка создания базы данных")
-            raise RuntimeError("Failed to create database table")
+    print("✅ База данных успешно инициализирована")
 
 
 def save_competitor(
@@ -117,13 +112,14 @@ def save_competitor(
             best_lap_ms = None
 
         with _get_conn() as conn:
-            conn.execute(
+            cur = conn.cursor()
+            cur.execute(
                 """
                 INSERT INTO user_competitors (
                     user_id, date, race_number, race_href, competitor_id, num, name, pos, laps,
                     theor_lap, best_lap, binary_laps, theor_lap_formatted, display_name,
                     gap_to_leader, lap_times_json, best_lap_ms
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
                     user_id,
@@ -145,22 +141,22 @@ def save_competitor(
                     best_lap_ms,
                 ),
             )
-            conn.commit()
-            return True
-    except sqlite3.IntegrityError:
+        return True
+    except psycopg2.IntegrityError:
         return False
 
 
 def get_user_competitors(user_id: int):
     """Return list of competitor data sorted by date desc."""
     with _get_conn() as conn:
-        cur = conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """
             SELECT date, race_number, race_href, competitor_id, num, name, pos, laps,
                    theor_lap, best_lap, binary_laps, theor_lap_formatted, display_name,
                    gap_to_leader, lap_times_json
             FROM user_competitors
-            WHERE user_id=?
+            WHERE user_id=%s
             ORDER BY substr(date,7,4) || substr(date,4,2) || substr(date,1,2) DESC
             """,
             (user_id,),
@@ -171,13 +167,14 @@ def get_user_competitors(user_id: int):
 def get_competitor_by_key(user_id: int, date: str, race_number: str, num: str):
     """Get specific competitor data by key."""
     with _get_conn() as conn:
-        cur = conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """
             SELECT date, race_number, race_href, competitor_id, num, name, pos, laps,
                    theor_lap, best_lap, binary_laps, theor_lap_formatted, display_name,
                    gap_to_leader, lap_times_json
             FROM user_competitors
-            WHERE user_id=? AND date=? AND race_number=? AND num=?
+            WHERE user_id=%s AND date=%s AND race_number=%s AND num=%s
             """,
             (user_id, date, race_number, num),
         )
@@ -187,53 +184,39 @@ def get_competitor_by_key(user_id: int, date: str, race_number: str, num: str):
 def delete_competitor(user_id: int, date: str, race_number: str, num: str):
     """Delete competitor; return True if row deleted."""
     with _get_conn() as conn:
-        cur = conn.execute(
-            "DELETE FROM user_competitors WHERE user_id=? AND date=? AND race_number=? AND num=?",
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM user_competitors WHERE user_id=%s AND date=%s AND race_number=%s AND num=%s",
             (user_id, date, race_number, num),
         )
-        conn.commit()
         return cur.rowcount > 0
 
 
 def get_all_competitors():
     """Get all competitors from all users."""
     with _get_conn() as conn:
-        cur = conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """
             SELECT user_id, date, race_number, race_href, competitor_id, num, name, pos, laps,
                    theor_lap, best_lap, binary_laps, theor_lap_formatted, display_name,
                    gap_to_leader, lap_times_json
             FROM user_competitors
             ORDER BY substr(date,7,4) || substr(date,4,2) || substr(date,1,2) DESC
-            """,
+            """
         )
         return cur.fetchall()
-
-
-def _time_string_to_ms(time_str: str) -> int:
-    """Преобразует строку времени 'M:SS.sss' в миллисекунды."""
-    if not time_str or time_str == "-":
-        return 999999999
-    try:
-        time_str = time_str.strip()
-        if ':' in time_str and '.' in time_str:
-            minutes, rest = time_str.split(':', 1)
-            seconds, ms = rest.split('.', 1)
-            return int(minutes) * 60000 + int(seconds) * 1000 + int(ms)
-        return 999999999
-    except Exception:
-        return 999999999
 
 
 def get_all_users():
     """Return list of {user_id, display_name} for all users with saved races."""
     with _get_conn() as conn:
-        cur = conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """
-            SELECT user_id, name, display_name
+            SELECT DISTINCT ON (user_id) user_id, name, display_name
             FROM user_competitors
-            GROUP BY user_id
-            ORDER BY MAX(substr(date,7,4) || substr(date,4,2) || substr(date,1,2)) DESC
+            ORDER BY user_id, substr(date,7,4) || substr(date,4,2) || substr(date,1,2) DESC
             """
         )
         rows = cur.fetchall()
@@ -251,10 +234,26 @@ def get_all_users():
     return result
 
 
+def _time_string_to_ms(time_str: str) -> int:
+    """Преобразует строку времени 'M:SS.sss' в миллисекунды."""
+    if not time_str or time_str == "-":
+        return 999999999
+    try:
+        time_str = time_str.strip()
+        if ':' in time_str and '.' in time_str:
+            minutes, rest = time_str.split(':', 1)
+            seconds, ms = rest.split('.', 1)
+            return int(minutes) * 60000 + int(seconds) * 1000 + int(ms)
+        return 999999999
+    except Exception:
+        return 999999999
+
+
 def get_best_competitors(limit: int = 20):
     """Get one best-lap row per user, sorted by best_lap_ms ASC."""
     with _get_conn() as conn:
-        cur = conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """
             WITH best_per_user AS (
                 SELECT user_id, MIN(best_lap_ms) AS min_ms
@@ -267,9 +266,10 @@ def get_best_competitors(limit: int = 20):
             FROM user_competitors uc
             INNER JOIN best_per_user bpu
                 ON uc.user_id = bpu.user_id AND uc.best_lap_ms = bpu.min_ms
-            GROUP BY uc.user_id
-            ORDER BY bpu.min_ms ASC
-            LIMIT ?
+            GROUP BY uc.user_id, uc.date, uc.race_number, uc.num, uc.name, uc.display_name,
+                     uc.theor_lap, uc.theor_lap_formatted, uc.best_lap, uc.pos
+            ORDER BY MIN(bpu.min_ms) ASC
+            LIMIT %s
             """,
             (limit,),
         )
@@ -279,12 +279,13 @@ def get_best_competitors(limit: int = 20):
 def get_best_competitors_today(today_date: str, limit: int = 20):
     """Get one best-lap row per user for today, sorted by best_lap_ms ASC."""
     with _get_conn() as conn:
-        cur = conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """
             WITH best_per_user AS (
                 SELECT user_id, MIN(best_lap_ms) AS min_ms
                 FROM user_competitors
-                WHERE date = ? AND best_lap_ms IS NOT NULL AND best_lap_ms > 0
+                WHERE date = %s AND best_lap_ms IS NOT NULL AND best_lap_ms > 0
                 GROUP BY user_id
             )
             SELECT uc.user_id, uc.date, uc.race_number, uc.num, uc.name, uc.display_name,
@@ -292,10 +293,11 @@ def get_best_competitors_today(today_date: str, limit: int = 20):
             FROM user_competitors uc
             INNER JOIN best_per_user bpu
                 ON uc.user_id = bpu.user_id AND uc.best_lap_ms = bpu.min_ms
-            WHERE uc.date = ?
-            GROUP BY uc.user_id
-            ORDER BY bpu.min_ms ASC
-            LIMIT ?
+            WHERE uc.date = %s
+            GROUP BY uc.user_id, uc.date, uc.race_number, uc.num, uc.name, uc.display_name,
+                     uc.theor_lap, uc.theor_lap_formatted, uc.best_lap, uc.pos
+            ORDER BY MIN(bpu.min_ms) ASC
+            LIMIT %s
             """,
             (today_date, today_date, limit),
         )

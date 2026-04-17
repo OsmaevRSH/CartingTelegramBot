@@ -8,10 +8,8 @@ services:
     env_file:
       - ../.env
     environment:
-      - DATABASE_PATH=/app/data/races.db
       - LOG_FILE=/app/logs/bot.log
     volumes:
-      - ../data:/app/data:rw
       - ../logs:/app/logs:rw
     networks:
       - carting-network
@@ -36,12 +34,10 @@ services:
     env_file:
       - ../.env
     environment:
-      - DATABASE_PATH=/app/data/races.db
       - LOG_FILE=/app/logs/api.log
       - API_HOST=0.0.0.0
       - API_PORT=8000
     volumes:
-      - ../data:/app/data:rw
       - ../logs:/app/logs:rw
     networks:
       - carting-network

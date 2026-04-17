@@ -14,6 +14,7 @@ except ImportError:
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(ROOT_DIR / "data" / "races.db"))
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
@@ -31,4 +32,3 @@ API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 
 os.makedirs(Path(LOG_FILE).parent, exist_ok=True)
-os.makedirs(Path(DATABASE_PATH).parent, exist_ok=True)
