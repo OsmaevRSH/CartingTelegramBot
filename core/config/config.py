@@ -32,3 +32,4 @@ API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
 
 os.makedirs(Path(LOG_FILE).parent, exist_ok=True)
+os.makedirs(Path(DATABASE_PATH).parent, exist_ok=True)
