@@ -132,14 +132,19 @@ export default function MyStats({ userId, userName }) {
             {/* Я */}
             <button
               onClick={() => handleSelectPilot(userId, userName || 'Я')}
-              className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+              className={`shrink-0 flex items-center gap-1.5 pl-1 pr-3 py-1 rounded-full text-xs font-medium transition-all ${
                 isMyself
                   ? 'bg-[#00FF7F] text-black'
                   : 'bg-[#1e1e1e] text-[#888] border border-[#333]'
               }`}
             >
-              <span>Я</span>
-              {userName && <span className="opacity-70">{userName}</span>}
+              <Avatar
+                name={userName || 'Я'}
+                photoUrl={users.find(u => String(u.user_id) === String(userId))?.photo_url}
+                size={20}
+                active={isMyself}
+              />
+              <span>{userName || 'Я'}</span>
             </button>
 
             {/* Other pilots */}
@@ -149,12 +154,13 @@ export default function MyStats({ userId, userName }) {
                 <div key={u.user_id} className="shrink-0 flex items-center gap-1">
                   <button
                     onClick={() => handleSelectPilot(u.user_id, u.display_name)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                    className={`flex items-center gap-1.5 pl-1 pr-3 py-1 rounded-full text-xs font-medium transition-all ${
                       isSelected
                         ? 'bg-[#00FF7F] text-black'
                         : 'bg-[#1e1e1e] text-[#888] border border-[#333]'
                     }`}
                   >
+                    <Avatar name={u.display_name} photoUrl={u.photo_url} size={20} active={isSelected} />
                     {u.display_name}
                   </button>
                   {u.telegram_username && (
@@ -242,6 +248,34 @@ export default function MyStats({ userId, userName }) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function Avatar({ name, photoUrl, size = 24, active = false }) {
+  const initials = (name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
+  const style = { width: size, height: size, minWidth: size, minHeight: size, borderRadius: '50%', overflow: 'hidden' }
+
+  if (photoUrl) {
+    return (
+      <img
+        src={photoUrl}
+        alt={name}
+        style={style}
+        className="object-cover"
+        onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
+      />
+    )
+  }
+
+  return (
+    <div
+      style={style}
+      className={`flex items-center justify-center text-[9px] font-bold ${
+        active ? 'bg-black/20 text-black' : 'bg-[#333] text-[#aaa]'
+      }`}
+    >
+      {initials}
     </div>
   )
 }

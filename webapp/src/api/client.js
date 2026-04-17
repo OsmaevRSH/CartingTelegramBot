@@ -77,12 +77,17 @@ export function fetchUsers() {
   return request('/users')
 }
 
-// Register / update current user's Telegram name and username
-export function registerUser(userId, name, username) {
+// Register / update current user's Telegram name, username and avatar
+export function registerUser(userId, name, username, photoUrl) {
   if (!userId || !name) return Promise.resolve()
   return request('/users/me', {
     method: 'POST',
-    body: JSON.stringify({ user_id: userId, name, username: username || null }),
+    body: JSON.stringify({
+      user_id: userId,
+      name,
+      username: username || null,
+      photo_url: photoUrl || null,
+    }),
   })
 }
 

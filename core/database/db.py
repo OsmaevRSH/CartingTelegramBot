@@ -103,6 +103,12 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+        try:
+            conn.execute("ALTER TABLE user_profiles ADD COLUMN photo_url TEXT")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
         cursor = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='user_competitors'"
         )
@@ -228,21 +234,27 @@ def get_all_competitors():
         return cur.fetchall()
 
 
-def upsert_user_profile(user_id: int, telegram_name: str, telegram_username: str = None):
-    """Сохраняет или обновляет Telegram-имя и username пользователя."""
+def upsert_user_profile(user_id: int, telegram_name: str, telegram_username: str = None, photo_url: str = None):
+    """Сохраняет или обновляет Telegram-имя, username и аватар пользователя."""
     if not telegram_name or not telegram_name.strip():
         return
     with _get_conn() as conn:
         conn.execute(
             """
-            INSERT INTO user_profiles (user_id, telegram_name, telegram_username, updated_at)
-            VALUES (?, ?, ?, datetime('now'))
+            INSERT INTO user_profiles (user_id, telegram_name, telegram_username, photo_url, updated_at)
+            VALUES (?, ?, ?, ?, datetime('now'))
             ON CONFLICT(user_id) DO UPDATE SET
                 telegram_name = excluded.telegram_name,
                 telegram_username = COALESCE(excluded.telegram_username, telegram_username),
+                photo_url = COALESCE(excluded.photo_url, photo_url),
                 updated_at = excluded.updated_at
             """,
-            (user_id, telegram_name.strip(), telegram_username.strip() if telegram_username else None),
+            (
+                user_id,
+                telegram_name.strip(),
+                telegram_username.strip() if telegram_username else None,
+                photo_url if photo_url else None,
+            ),
         )
         conn.commit()
 
@@ -254,7 +266,8 @@ def get_all_users():
             """
             SELECT uc.user_id, uc.name, uc.display_name,
                    COALESCE(up.telegram_name, '') as telegram_name,
-                   COALESCE(up.telegram_username, '') as telegram_username
+                   COALESCE(up.telegram_username, '') as telegram_username,
+                   COALESCE(up.photo_url, '') as photo_url
             FROM user_competitors uc
             LEFT JOIN user_profiles up ON up.user_id = uc.user_id
             GROUP BY uc.user_id
@@ -264,7 +277,7 @@ def get_all_users():
         rows = cur.fetchall()
 
     result = []
-    for user_id, name, display_name, telegram_name, telegram_username in rows:
+    for user_id, name, display_name, telegram_name, telegram_username, photo_url in rows:
         if telegram_name and telegram_name.strip():
             label = telegram_name.strip()
         elif telegram_username and telegram_username.strip():
@@ -279,6 +292,7 @@ def get_all_users():
             'user_id': user_id,
             'display_name': label,
             'telegram_username': telegram_username.strip() if telegram_username else None,
+            'photo_url': photo_url.strip() if photo_url else None,
         })
 
     return result

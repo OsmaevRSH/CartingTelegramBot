@@ -7,15 +7,15 @@ import Leaderboard from './pages/Leaderboard.jsx'
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('stats')
-  const { userId, userName, userUsername, isDevMode } = useTelegram()
+  const { userId, userName, userUsername, userPhotoUrl, isDevMode } = useTelegram()
 
-  // Sync userId to API client and register Telegram name
+  // Sync userId to API client and register Telegram name + avatar
   useEffect(() => {
     setUserId(userId)
     if (userId && userName) {
-      registerUser(userId, userName, userUsername).catch(() => {})
+      registerUser(userId, userName, userUsername, userPhotoUrl).catch(() => {})
     }
-  }, [userId, userName, userUsername])
+  }, [userId, userName, userUsername, userPhotoUrl])
 
   return (
     <div

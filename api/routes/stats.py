@@ -63,12 +63,13 @@ class RegisterUserRequest(BaseModel):
     user_id: int
     name: str
     username: Optional[str] = None
+    photo_url: Optional[str] = None
 
 
 @router.post("/users/me")
 async def register_user(body: RegisterUserRequest):
-    """Сохраняет Telegram-имя и username пользователя."""
-    upsert_user_profile(body.user_id, body.name, body.username)
+    """Сохраняет Telegram-имя, username и аватар пользователя."""
+    upsert_user_profile(body.user_id, body.name, body.username, body.photo_url)
     return {"ok": True}
 
 
