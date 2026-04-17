@@ -15,11 +15,12 @@ function todayDDMMYYYY() {
 }
 
 function Avatar({ name, photoUrl, size = 32 }) {
+  const [imgError, setImgError] = useState(false)
   const initials = (name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
   const style = { width: size, height: size, minWidth: size, minHeight: size, overflow: 'hidden' }
 
-  if (photoUrl) {
-    return <img src={photoUrl} alt={name} style={style} className="object-cover" />
+  if (photoUrl && !imgError) {
+    return <img src={photoUrl} alt={name} style={style} className="object-cover" onError={() => setImgError(true)} />
   }
   return (
     <div style={style} className="flex items-center justify-center text-[10px] font-bold bg-[#353534] text-[#ebbbb4]">

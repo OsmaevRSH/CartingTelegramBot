@@ -307,6 +307,7 @@ function openTgProfile(username, userId) {
 }
 
 function Avatar({ name, photoUrl, size = 24, square = false }) {
+  const [imgError, setImgError] = useState(false)
   const initials = (name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
   const style = {
     width: size,
@@ -317,14 +318,14 @@ function Avatar({ name, photoUrl, size = 24, square = false }) {
     overflow: 'hidden',
   }
 
-  if (photoUrl) {
+  if (photoUrl && !imgError) {
     return (
       <img
         src={photoUrl}
         alt={name}
         style={style}
         className="object-cover"
-        onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex' }}
+        onError={() => setImgError(true)}
       />
     )
   }
