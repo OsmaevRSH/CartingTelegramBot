@@ -826,6 +826,25 @@ async def best_today_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _send_message_with_thread(context, update, text, parse_mode=ParseMode.HTML)
 
 
+# ────────────────────────── /app ──────────────────────────
+
+async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отправляет сообщение с инлайн-кнопкой для открытия Mini App."""
+    await _delete_command_message(update, context)
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "🏎️ Открыть Mini App",
+            web_app=WebAppInfo(url="https://carting.ltheresi.com"),
+        )
+    ]])
+    await _send_message_with_thread(
+        context, update,
+        "🏁 Нажми кнопку, чтобы открыть приложение карт-трекера:",
+        reply_markup=keyboard,
+    )
+
+
 # ────────────────────────── Error handler ──────────────────────────
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -858,6 +877,7 @@ async def _set_default_commands(app: Application) -> None:
         BotCommand("stats", "Статистика пользователя"),
         BotCommand("best", "Рейтинг гонщиков"),
         BotCommand("best_today", "Рейтинг за сегодня"),
+        BotCommand("app", "Открыть Mini App"),
     ])
     await app.bot.set_chat_menu_button(
         menu_button=MenuButtonWebApp(
@@ -911,6 +931,9 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.Regex(r'^/best@\w+'), best_command))
     application.add_handler(CommandHandler("best_today", best_today_command))
     application.add_handler(MessageHandler(filters.Regex(r'^/best_today@\w+'), best_today_command))
+
+    application.add_handler(CommandHandler("app", app_command))
+    application.add_handler(MessageHandler(filters.Regex(r'^/app@\w+'), app_command))
 
     application.add_handler(CallbackQueryHandler(view_stats_callback, pattern=r"^view_stats_"))
     application.add_handler(CallbackQueryHandler(ask_delete_stats_callback, pattern=r"^askdel_stats_"))
