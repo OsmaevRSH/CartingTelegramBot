@@ -85,6 +85,17 @@ def init_db():
             conn.commit()
             print(f"✅ Мигрировано {len(rows)} записей best_lap_ms")
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id INTEGER PRIMARY KEY,
+                telegram_name TEXT,
+                updated_at TEXT DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.commit()
+
         cursor = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='user_competitors'"
         )
@@ -210,24 +221,46 @@ def get_all_competitors():
         return cur.fetchall()
 
 
+def upsert_user_profile(user_id: int, telegram_name: str):
+    """Сохраняет или обновляет Telegram-имя пользователя."""
+    if not telegram_name or not telegram_name.strip():
+        return
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_profiles (user_id, telegram_name, updated_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(user_id) DO UPDATE SET
+                telegram_name = excluded.telegram_name,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, telegram_name.strip()),
+        )
+        conn.commit()
+
+
 def get_all_users():
     """Return list of {user_id, display_name} for all users with saved races."""
     with _get_conn() as conn:
         cur = conn.execute(
             """
-            SELECT user_id, name, display_name
-            FROM user_competitors
-            GROUP BY user_id
-            ORDER BY MAX(substr(date,7,4) || substr(date,4,2) || substr(date,1,2)) DESC
+            SELECT uc.user_id, uc.name, uc.display_name,
+                   COALESCE(up.telegram_name, '') as telegram_name
+            FROM user_competitors uc
+            LEFT JOIN user_profiles up ON up.user_id = uc.user_id
+            GROUP BY uc.user_id
+            ORDER BY MAX(substr(uc.date,7,4) || substr(uc.date,4,2) || substr(uc.date,1,2)) DESC
             """
         )
         rows = cur.fetchall()
 
     result = []
-    for user_id, name, display_name in rows:
-        if name and name.strip() and not (display_name or '').startswith('Карт #'):
+    for user_id, name, display_name, telegram_name in rows:
+        if telegram_name and telegram_name.strip():
+            label = telegram_name.strip()
+        elif name and name.strip() and not (display_name or '').startswith('Карт #'):
             label = name.strip()
-        elif display_name and display_name.strip():
+        elif display_name and display_name.strip() and not display_name.startswith('Карт #'):
             label = display_name.strip()
         else:
             label = f'ID:{user_id}'
@@ -263,10 +296,12 @@ def get_best_competitors(limit: int = 20):
                 GROUP BY user_id
             )
             SELECT uc.user_id, uc.date, uc.race_number, uc.num, uc.name, uc.display_name,
-                   uc.theor_lap, uc.theor_lap_formatted, uc.best_lap, uc.pos
+                   uc.theor_lap, uc.theor_lap_formatted, uc.best_lap, uc.pos,
+                   COALESCE(up.telegram_name, '') as telegram_name
             FROM user_competitors uc
             INNER JOIN best_per_user bpu
                 ON uc.user_id = bpu.user_id AND uc.best_lap_ms = bpu.min_ms
+            LEFT JOIN user_profiles up ON up.user_id = uc.user_id
             GROUP BY uc.user_id
             ORDER BY bpu.min_ms ASC
             LIMIT ?
@@ -288,10 +323,12 @@ def get_best_competitors_today(today_date: str, limit: int = 20):
                 GROUP BY user_id
             )
             SELECT uc.user_id, uc.date, uc.race_number, uc.num, uc.name, uc.display_name,
-                   uc.theor_lap, uc.theor_lap_formatted, uc.best_lap, uc.pos
+                   uc.theor_lap, uc.theor_lap_formatted, uc.best_lap, uc.pos,
+                   COALESCE(up.telegram_name, '') as telegram_name
             FROM user_competitors uc
             INNER JOIN best_per_user bpu
                 ON uc.user_id = bpu.user_id AND uc.best_lap_ms = bpu.min_ms
+            LEFT JOIN user_profiles up ON up.user_id = uc.user_id
             WHERE uc.date = ?
             GROUP BY uc.user_id
             ORDER BY bpu.min_ms ASC

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from core.database.db import (
     get_user_competitors, get_competitor_by_key,
-    save_competitor, delete_competitor, get_all_users,
+    save_competitor, delete_competitor, get_all_users, upsert_user_profile,
 )
 from core.models.models import LapData
 
@@ -57,6 +57,18 @@ def _row_to_dict(row: tuple) -> dict:
 async def get_users():
     """Возвращает всех пользователей с сохранёнными заездами."""
     return get_all_users()
+
+
+class RegisterUserRequest(BaseModel):
+    user_id: int
+    name: str
+
+
+@router.post("/users/me")
+async def register_user(body: RegisterUserRequest):
+    """Сохраняет Telegram-имя пользователя."""
+    upsert_user_profile(body.user_id, body.name)
+    return {"ok": True}
 
 
 @router.get("/stats/{user_id}")

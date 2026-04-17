@@ -223,6 +223,9 @@ export default function Leaderboard({ userId }) {
 }
 
 function getDisplayName(entry) {
+  if (entry.telegram_name && entry.telegram_name.trim()) {
+    return entry.telegram_name.trim()
+  }
   if (entry.name && entry.name.trim() && !(entry.display_name || '').startsWith('Карт #')) {
     return entry.name.trim()
   }

@@ -11,7 +11,8 @@ from core.parsers.parsers import ArchiveParser, RaceParser, FullRaceInfoParser
 from core.models.models import ParsingError
 from core.database.db import (
     init_db, save_competitor, get_user_competitors, get_competitor_by_key,
-    delete_competitor, get_all_competitors, get_best_competitors, get_best_competitors_today
+    delete_competitor, get_all_competitors, get_best_competitors, get_best_competitors_today,
+    upsert_user_profile,
 )
 import json
 
@@ -221,6 +222,12 @@ async def add_race_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     users_ordered = list(users_dict.values())
     context.user_data["user_options"] = users_ordered
+
+    # Сохраняем Telegram-имена всех пользователей
+    for u in users_ordered:
+        name = u.full_name or u.username
+        if name:
+            upsert_user_profile(u.id, name)
 
     keyboard = _build_keyboard(
         [[(u.full_name or u.username or str(u.id), f"user_{u.id}")] for u in users_ordered]

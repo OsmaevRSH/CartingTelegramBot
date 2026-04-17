@@ -77,6 +77,15 @@ export function fetchUsers() {
   return request('/users')
 }
 
+// Register / update current user's Telegram name
+export function registerUser(userId, name) {
+  if (!userId || !name) return Promise.resolve()
+  return request('/users/me', {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId, name }),
+  })
+}
+
 // Leaderboard (all time)
 export function fetchLeaderboard() {
   return request('/leaderboard')

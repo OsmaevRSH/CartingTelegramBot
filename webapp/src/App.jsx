@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTelegram } from './hooks/useTelegram.js'
-import { setUserId } from './api/client.js'
+import { setUserId, registerUser } from './api/client.js'
 import BottomNav from './components/BottomNav.jsx'
 import AddRace from './pages/AddRace.jsx'
 import MyStats from './pages/MyStats.jsx'
@@ -10,10 +10,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('add')
   const { userId, userName, isDevMode } = useTelegram()
 
-  // Sync userId to API client whenever it changes
+  // Sync userId to API client and register Telegram name
   useEffect(() => {
     setUserId(userId)
-  }, [userId])
+    if (userId && userName) {
+      registerUser(userId, userName).catch(() => {})
+    }
+  }, [userId, userName])
 
   return (
     <div
