@@ -137,16 +137,16 @@ export default function MyStats({ userId, userName }) {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-4 pt-5 pb-3">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h1 className="text-xl font-bold text-[#e5e2e1] tracking-tighter leading-none">{headerName}</h1>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl font-bold text-[#e5e2e1] tracking-tighter leading-none truncate">{headerName}</h1>
             {!loading && races.length > 0 && (
               <p className="text-[#ebbbb4] text-[9px] mt-1 uppercase tracking-widest">
                 {races.length} {pluralRaces(races.length)}
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {/* Add for another person */}
             {otherPilots.length > 0 && (
               <button
