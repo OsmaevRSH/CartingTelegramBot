@@ -58,13 +58,13 @@ export default function RaceCard({ race, onDelete }) {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[#888888] text-xs lap-time">{race.date}</span>
             <span className="text-[#444] text-xs">•</span>
-            <span className="text-[#888888] text-xs">Заезд {race.race_number}</span>
+            <span className="text-[#888888] text-xs">{race.race_number}</span>
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-white text-sm font-medium">
               Карт #{race.num}
             </span>
-            {race.display_name && race.display_name !== race.num?.toString() && (
+            {race.display_name && !race.display_name.startsWith('Карт #') && race.display_name !== race.num?.toString() && (
               <span className="text-[#888888] text-xs truncate">
                 {race.display_name}
               </span>

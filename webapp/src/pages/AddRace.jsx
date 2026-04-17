@@ -199,6 +199,8 @@ export default function AddRace({ userId, userName }) {
     return c.best_lap < best.best_lap ? c : best
   }, null)
 
+  const isBestCart = (cart) => bestLapCart && cart.number === bestLapCart.number
+
   const stepIndex = ALL_STEPS.indexOf(step)
 
   // Other users (exclude current user)
@@ -248,7 +250,7 @@ export default function AddRace({ userId, userName }) {
               {step === STEP_USER && 'Выберите гонщика'}
               {step === STEP_DATE && (targetUserId !== userId ? `Для: ${targetUserName} — выберите дату` : 'Выберите дату')}
               {step === STEP_RACE && `${selectedDay?.date} — выберите заезд`}
-              {step === STEP_CART && `Заезд ${selectedRace?.number} — выберите карт`}
+              {step === STEP_CART && `${selectedRace?.number} — выберите карт`}
               {step === STEP_RESULT && 'Результат'}
             </p>
           </div>
@@ -425,7 +427,7 @@ export default function AddRace({ userId, userName }) {
               <ErrorBanner message={cartsError} onRetry={() => loadCarts(selectedRace.href)} />
             )}
             {!cartsLoading && !cartsError && carts.map((cart) => {
-              const isBest = bestLapCart && cart.id === bestLapCart.id
+              const isBest = isBestCart(cart)
               return (
                 <button
                   key={cart.id}
