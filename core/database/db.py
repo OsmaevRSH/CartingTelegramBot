@@ -355,7 +355,8 @@ def get_best_competitors(limit: int = 20):
             SELECT uc.user_id, uc.date, uc.race_number, uc.num, uc.name, uc.display_name,
                    uc.theor_lap, uc.theor_lap_formatted, uc.best_lap, uc.pos,
                    COALESCE(up.telegram_name, '') as telegram_name,
-                   COALESCE(up.photo_url, '') as photo_url
+                   COALESCE(up.photo_url, '') as photo_url,
+                   uc.lap_times_json, uc.race_href
             FROM user_competitors uc
             INNER JOIN best_per_user bpu
                 ON uc.user_id = bpu.user_id AND uc.best_lap_ms = bpu.min_ms
@@ -383,7 +384,8 @@ def get_best_competitors_today(today_date: str, limit: int = 20):
             SELECT uc.user_id, uc.date, uc.race_number, uc.num, uc.name, uc.display_name,
                    uc.theor_lap, uc.theor_lap_formatted, uc.best_lap, uc.pos,
                    COALESCE(up.telegram_name, '') as telegram_name,
-                   COALESCE(up.photo_url, '') as photo_url
+                   COALESCE(up.photo_url, '') as photo_url,
+                   uc.lap_times_json, uc.race_href
             FROM user_competitors uc
             INNER JOIN best_per_user bpu
                 ON uc.user_id = bpu.user_id AND uc.best_lap_ms = bpu.min_ms

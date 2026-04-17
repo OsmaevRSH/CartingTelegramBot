@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import LoadingSpinner from '../components/LoadingSpinner.jsx'
 import LapTimesTable from '../components/LapTimesTable.jsx'
-import { fetchLeaderboard, fetchLeaderboardToday, fetchKartsToday } from '../api/client.js'
+import { fetchLeaderboard, fetchLeaderboardToday, fetchKartsToday, fetchFullRace } from '../api/client.js'
 
 const SEG_ALL = 'all'
 const SEG_TODAY = 'today'
@@ -59,6 +59,8 @@ export default function Leaderboard({ userId, resetSignal }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
+  const [lapCache, setLapCache] = useState({})   // user_id → laps[]
+  const [loadingLapId, setLoadingLapId] = useState(null)
 
   const scrollRef = useRef(null)
 
@@ -68,14 +70,14 @@ export default function Leaderboard({ userId, resetSignal }) {
   }, [resetSignal])
 
   const loadAll = useCallback(async () => {
-    setLoading(true); setError(null); setExpandedId(null)
+    setLoading(true); setError(null); setExpandedId(null); setLapCache({})
     try { setAllData((await fetchLeaderboard()) || []) }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }, [])
 
   const loadToday = useCallback(async () => {
-    setLoading(true); setError(null); setExpandedId(null)
+    setLoading(true); setError(null); setExpandedId(null); setLapCache({})
     try { setTodayData((await fetchLeaderboardToday(todayDDMMYYYY())) || []) }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
@@ -193,18 +195,42 @@ export default function Leaderboard({ userId, resetSignal }) {
                   String(entry.user_id) === String(userId)
                 const displayName = getDisplayName(entry)
                 const photoUrl = entry.photo_url || null
-                const laps = parseLaps(entry.lap_times_json)
+                const cachedLaps = lapCache[entry.user_id]
+                const storedLaps = parseLaps(entry.lap_times_json)
+                const laps = cachedLaps ?? storedLaps
                 const isExpanded = expandedId === entry.user_id
-                const hasLaps = laps.filter(l => l.lap_number !== 0).length > 0
+                const isLoadingThis = loadingLapId === entry.user_id
+
+                async function handleToggle() {
+                  if (isExpanded) { setExpandedId(null); return }
+                  setExpandedId(entry.user_id)
+                  if (lapCache[entry.user_id] !== undefined) return
+                  if (storedLaps.filter(l => l.lap_number !== 0).length > 0) {
+                    setLapCache(c => ({ ...c, [entry.user_id]: storedLaps }))
+                    return
+                  }
+                  if (!entry.race_href) return
+                  setLoadingLapId(entry.user_id)
+                  try {
+                    const data = await fetchFullRace(entry.race_href)
+                    const competitor = (data || []).find(c => String(c.num) === String(entry.num))
+                    const fetched = (competitor?.lap_times || []).filter(l => l.lap_number !== 0)
+                    setLapCache(c => ({ ...c, [entry.user_id]: fetched }))
+                  } catch {
+                    setLapCache(c => ({ ...c, [entry.user_id]: [] }))
+                  } finally {
+                    setLoadingLapId(null)
+                  }
+                }
 
                 return (
                   <div key={`${entry.user_id}-${idx}`}>
                     <div
-                      className={`flex items-center gap-3 px-3 py-2.5 transition-all ${
+                      className={`flex items-center gap-3 px-3 py-2.5 transition-all cursor-pointer ${
                         isCurrentUser ? 'bg-[#0e0e0e]' : 'bg-[#1c1b1b]'
-                      } ${hasLaps ? 'cursor-pointer' : ''}`}
+                      }`}
                       style={isCurrentUser ? { borderLeft: '3px solid #ff5540' } : { borderLeft: '3px solid transparent' }}
-                      onClick={() => hasLaps && setExpandedId(isExpanded ? null : entry.user_id)}
+                      onClick={handleToggle}
                     >
                       <div className="shrink-0 w-7 flex justify-center">
                         <RankBadge rank={rank} isCurrentUser={isCurrentUser} />
@@ -231,22 +257,30 @@ export default function Leaderboard({ userId, resetSignal }) {
                           </div>
                           <div className="text-[#454747] text-[9px] uppercase tracking-widest">лучший</div>
                         </div>
-                        {hasLaps && (
-                          <svg
-                            width="12" height="12" viewBox="0 0 24 24" fill="none"
-                            stroke="#454747" strokeWidth="2" strokeLinecap="square"
-                            className={`shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-                          >
-                            <polyline points="6 9 12 15 18 9"/>
-                          </svg>
-                        )}
+                        <svg
+                          width="12" height="12" viewBox="0 0 24 24" fill="none"
+                          stroke="#454747" strokeWidth="2" strokeLinecap="square"
+                          className={`shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                        >
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
                       </div>
                     </div>
 
                     {/* Expanded lap times */}
-                    {isExpanded && hasLaps && (
+                    {isExpanded && (
                       <div className="bg-[#0e0e0e] px-3 pt-2 pb-3" style={{ borderLeft: '3px solid #201f1f' }}>
-                        <LapTimesTable lapTimes={laps} />
+                        {isLoadingThis && (
+                          <div className="flex justify-center py-4">
+                            <LoadingSpinner size="sm" label="Загрузка кругов..." />
+                          </div>
+                        )}
+                        {!isLoadingThis && laps.length > 0 && <LapTimesTable lapTimes={laps} />}
+                        {!isLoadingThis && laps.length === 0 && (
+                          <p className="text-[#454747] text-[9px] uppercase tracking-widest py-3 text-center">
+                            Нет данных по кругам
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
