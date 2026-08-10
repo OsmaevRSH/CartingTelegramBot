@@ -164,7 +164,7 @@ SQLite запущен с `PRAGMA journal_mode=WAL` для корректной �
 
 - `BOT_TOKEN` — токен Telegram-бота (обязателен)
 - `AUTH_SECRET` — секрет для подписи mobile-auth access tokens
-- `ACCESS_TOKEN_TTL_SECONDS` — срок access token, по умолчанию `900` секунд
+- Access token всегда имеет фиксированный срок `900` секунд (не переопределяется окружением)
 - `REFRESH_TOKEN_TTL_SECONDS` — срок refresh session, по умолчанию `2592000` секунд
 - `PAIRING_CODE_TTL_SECONDS` — срок одноразового pairing-кода, по умолчанию `600` секунд
 - `DATABASE_PATH` — путь к SQLite (по умолчанию `data/races.db`)

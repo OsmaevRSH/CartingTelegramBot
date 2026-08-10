@@ -256,14 +256,15 @@ def rotate_refresh_session(token: str) -> Optional[tuple[int, str]]:
 
 def revoke_refresh_session(token: str) -> bool:
     """Revoke an active refresh session, returning whether it was active."""
+    now = _utc_now_iso()
     with _get_conn() as conn:
         cursor = conn.execute(
             """
             UPDATE mobile_refresh_sessions
             SET revoked_at = ?
-            WHERE token_hash = ? AND revoked_at IS NULL
+            WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?
             """,
-            (_utc_now_iso(), _token_hash(token)),
+            (now, _token_hash(token), now),
         )
     return cursor.rowcount == 1
 

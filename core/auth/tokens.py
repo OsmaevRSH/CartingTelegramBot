@@ -4,7 +4,9 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 
-from core.config.config import ACCESS_TOKEN_TTL_SECONDS, AUTH_SECRET
+from core.config.config import AUTH_SECRET
+
+ACCESS_TOKEN_LIFETIME_SECONDS = 900
 
 
 def issue_access_token(user_id: int) -> str:
@@ -14,7 +16,7 @@ def issue_access_token(user_id: int) -> str:
             "sub": str(user_id),
             "type": "access",
             "iat": now,
-            "exp": now + timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS),
+            "exp": now + timedelta(seconds=ACCESS_TOKEN_LIFETIME_SECONDS),
         },
         AUTH_SECRET,
         algorithm="HS256",

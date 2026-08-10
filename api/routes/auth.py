@@ -3,8 +3,7 @@
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
-from core.auth.tokens import issue_access_token
-from core.config.config import ACCESS_TOKEN_TTL_SECONDS
+from core.auth.tokens import ACCESS_TOKEN_LIFETIME_SECONDS, issue_access_token
 from core.database.db import (
     consume_pairing_code,
     create_refresh_session,
@@ -27,7 +26,7 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
-    expires_in: int = ACCESS_TOKEN_TTL_SECONDS
+    expires_in: int = ACCESS_TOKEN_LIFETIME_SECONDS
 
 
 def _tokens(user_id: int, refresh_token: str) -> TokenResponse:

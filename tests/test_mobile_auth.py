@@ -10,6 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 import core.database.db as db
 import api.main as api_main
+import core.auth.tokens as auth_tokens
 from api.dependencies import require_mobile_user
 from core.auth.tokens import decode_access_token, issue_access_token
 from core.config.config import AUTH_SECRET
@@ -154,6 +155,15 @@ def test_access_token_round_trip_uses_mobile_user_id():
     assert claims['exp'] - claims['iat'] == 900
 
 
+def test_access_token_lifetime_cannot_be_overridden(monkeypatch):
+    monkeypatch.setenv('ACCESS_TOKEN_TTL_SECONDS', '1')
+
+    token = issue_access_token(42)
+    claims = jwt.decode(token, AUTH_SECRET, algorithms=['HS256'])
+
+    assert claims['exp'] - claims['iat'] == 900
+
+
 @pytest.mark.parametrize(
     'token',
     [
@@ -191,6 +201,29 @@ def test_refresh_rejects_reused_session(client):
     ).status_code == 200
 
     response = client.post('/api/mobile/auth/refresh', json={'refresh_token': token})
+
+    assert response.status_code == 401
+    assert response.json() == {'detail': 'Недействительная сессия'}
+
+
+def test_logout_rejects_expired_refresh_session(client, pairing_db):
+    token = 'expired-refresh-token-for-logout'
+    with sqlite3.connect(pairing_db) as conn:
+        conn.execute(
+            """
+            INSERT INTO mobile_refresh_sessions (token_hash, user_id, expires_at, revoked_at)
+            VALUES (?, ?, ?, NULL)
+            """,
+            (
+                hashlib.sha256(token.encode()).hexdigest(),
+                42,
+                (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+            ),
+        )
+
+    response = client.post(
+        '/api/mobile/auth/logout', json={'refresh_token': token}
+    )
 
     assert response.status_code == 401
     assert response.json() == {'detail': 'Недействительная сессия'}
