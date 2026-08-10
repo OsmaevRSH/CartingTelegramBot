@@ -147,11 +147,22 @@ deployment/
 
 SQLite запущен с `PRAGMA journal_mode=WAL` для корректной работы при конкурентных запросах.
 
+Для mobile-auth `init_db()` также создаёт две таблицы:
+
+- `mobile_pairing_codes(code_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT)` — одноразовые коды привязки мобильного клиента. В базе хранится только SHA-256 хеш кода; `consume_pairing_code()` проверяет срок, помечает код использованным и возвращает `user_id` в одной SQLite-транзакции.
+- `mobile_refresh_sessions(token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT)` — refresh-сессии. В базе хранится только SHA-256 хеш токена; `rotate_refresh_session()` атомарно отзывает предшественник и создаёт replacement-токен, а `revoke_refresh_session()` отзывает активную сессию.
+
+Время хранения и статусы используют timezone-aware UTC ISO-8601 timestamps. Генерируемые коды и токены создаются через `secrets.token_urlsafe`; исходные значения никогда не сохраняются.
+
 ## Configuration
 
 Единственный `.env` файл находится в корне проекта.
 
 - `BOT_TOKEN` — токен Telegram-бота (обязателен)
+- `AUTH_SECRET` — секрет для подписи mobile-auth access tokens
+- `ACCESS_TOKEN_TTL_SECONDS` — срок access token, по умолчанию `900` секунд
+- `REFRESH_TOKEN_TTL_SECONDS` — срок refresh session, по умолчанию `2592000` секунд
+- `PAIRING_CODE_TTL_SECONDS` — срок одноразового pairing-кода, по умолчанию `600` секунд
 - `DATABASE_PATH` — путь к SQLite (по умолчанию `data/races.db`)
 - `LOG_FILE` — путь к лог-файлу
 - `PARSER_TIMEOUT`, `PARSER_MAX_RETRIES` — настройки скрейпинга
