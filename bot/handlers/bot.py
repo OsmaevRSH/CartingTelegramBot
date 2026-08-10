@@ -19,6 +19,7 @@ from core.database.db import (
     init_db, save_competitor, get_user_competitors, get_competitor_by_key,
     delete_competitor, get_all_competitors, get_best_competitors, get_best_competitors_today,
     upsert_user_profile,
+    create_pairing_code,
 )
 import json
 
@@ -849,7 +850,17 @@ async def best_today_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await _send_message_with_thread(context, update, text, parse_mode=ParseMode.HTML)
 
 
-# ────────────────────────── /app ──────────────────────────
+# ────────────────────────── /ios, /app ──────────────────────────
+
+async def ios_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Выдаёт одноразовый код привязки нативного iOS-приложения."""
+    code = create_pairing_code(update.effective_user.id)
+    await update.effective_message.reply_text(
+        "📱 <b>Код для iOS</b>\n\n"
+        f"<code>{html.escape(code)}</code>\n\n"
+        "Код действует 10 минут и может быть использован только один раз.",
+        parse_mode=ParseMode.HTML,
+    )
 
 async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Отправляет сообщение с инлайн-кнопкой для открытия Mini App."""
@@ -905,6 +916,7 @@ async def _set_default_commands(app: Application) -> None:
         BotCommand("best", "Рейтинг гонщиков"),
         BotCommand("best_today", "Рейтинг за сегодня"),
         BotCommand("app", "Открыть Mini App"),
+        BotCommand("ios", "Подключить iOS-приложение"),
     ]
     # Устанавливаем команды для всех контекстов
     await app.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
@@ -965,6 +977,7 @@ def main() -> None:
 
     application.add_handler(CommandHandler("app", app_command))
     application.add_handler(MessageHandler(filters.Regex(r'^/app@\w+'), app_command))
+    application.add_handler(CommandHandler("ios", ios_command))
 
     application.add_handler(CallbackQueryHandler(view_stats_callback, pattern=r"^view_stats_"))
     application.add_handler(CallbackQueryHandler(ask_delete_stats_callback, pattern=r"^askdel_stats_"))

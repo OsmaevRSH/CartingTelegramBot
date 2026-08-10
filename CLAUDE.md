@@ -120,6 +120,7 @@ deployment/
 - `/best` — глобальная таблица лучших кругов
 - `/best_today` — таблица лучших за сегодня
 - `/cancel` — отменить текущий диалог `/add` (скрыта из меню)
+- `/ios` — получить одноразовый код привязки iOS-приложения; код действует 10 минут и используется один раз
 
 ## API Endpoints
 
@@ -137,6 +138,9 @@ deployment/
 | POST | /api/mobile/auth/exchange | Обмен одноразового кода на access/refresh tokens |
 | POST | /api/mobile/auth/refresh | Ротация refresh session и выдача новой пары токенов |
 | POST | /api/mobile/auth/logout | Отзыв refresh session |
+| GET | /api/mobile/stats | Заезды владельца bearer-токена |
+| POST | /api/mobile/stats | Сохранить заезд владельцу bearer-токена |
+| DELETE | /api/mobile/stats/{date}/{race_number}/{num} | Удалить свой заезд |
 
 ## Database Schema (SQLite)
 
@@ -175,6 +179,14 @@ SQLite запущен с `PRAGMA journal_mode=WAL` для корректной �
 
 Docker переопределяет `DATABASE_PATH` и `LOG_FILE` под пути внутри контейнеров.
 Webapp использует переменную сборки `VITE_API_URL` (см. `webapp/.env.example`).
+
+Нативное iOS-приложение подключается через `/ios`: пользователь вводит полученный код в приложении, а оно обменивает код через `/api/mobile/auth/exchange`. Pairing-код живёт 600 секунд и одноразовый; access token живёт 900 секунд, refresh session — 2592000 секунд. Для production обязательно задать длинный случайный `AUTH_SECRET` и не хранить его в репозитории.
+
+Проверка mobile API и полного проекта:
+```bash
+/usr/bin/python3 -m pytest tests/test_mobile_stats.py tests/test_mobile_auth.py -q
+/usr/bin/python3 -m pytest -q
+```
 
 ## Imports & Python Path
 
