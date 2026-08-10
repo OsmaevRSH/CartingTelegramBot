@@ -2,12 +2,21 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import json
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
 
 try:
-    from core.config.config import DATABASE_PATH
+    from core.config.config import (
+        DATABASE_PATH,
+        PAIRING_CODE_TTL_SECONDS,
+        REFRESH_TOKEN_TTL_SECONDS,
+    )
     DB_FILE = Path(DATABASE_PATH)
 except ImportError:
     DB_FILE = Path(__file__).parent.parent.parent / "data" / "races.db"
+    PAIRING_CODE_TTL_SECONDS = 600
+    REFRESH_TOKEN_TTL_SECONDS = 2_592_000
 
 
 def _get_conn():
@@ -18,6 +27,14 @@ def _get_conn():
     conn = sqlite3.connect(DB_FILE)
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _token_hash(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
 
 
 def clear_db():
@@ -109,6 +126,28 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mobile_pairing_codes (
+                code_hash TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                expires_at TEXT NOT NULL,
+                consumed_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mobile_refresh_sessions (
+                token_hash TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                expires_at TEXT NOT NULL,
+                revoked_at TEXT
+            )
+            """
+        )
+        conn.commit()
+
         cursor = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='user_competitors'"
         )
@@ -117,6 +156,116 @@ def init_db():
         else:
             print("❌ Ошибка создания базы данных")
             raise RuntimeError("Failed to create database table")
+
+
+def create_pairing_code(user_id: int) -> str:
+    """Create a short-lived one-time mobile pairing code for a Telegram user."""
+    code = secrets.token_urlsafe(24)
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
+    ).isoformat()
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO mobile_pairing_codes (code_hash, user_id, expires_at, consumed_at)
+            VALUES (?, ?, ?, NULL)
+            """,
+            (_token_hash(code), user_id, expires_at),
+        )
+    return code
+
+
+def consume_pairing_code(code: str) -> Optional[int]:
+    """Consume a valid pairing code once and return its user ID."""
+    now = _utc_now_iso()
+    with _get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """
+            SELECT user_id FROM mobile_pairing_codes
+            WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?
+            """,
+            (_token_hash(code), now),
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute(
+            """
+            UPDATE mobile_pairing_codes
+            SET consumed_at = ?
+            WHERE code_hash = ? AND consumed_at IS NULL
+            """,
+            (now, _token_hash(code)),
+        )
+        return row[0]
+
+
+def create_refresh_session(user_id: int) -> str:
+    """Create a refresh session and return its opaque token."""
+    token = secrets.token_urlsafe(48)
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS)
+    ).isoformat()
+    with _get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO mobile_refresh_sessions (token_hash, user_id, expires_at, revoked_at)
+            VALUES (?, ?, ?, NULL)
+            """,
+            (_token_hash(token), user_id, expires_at),
+        )
+    return token
+
+
+def rotate_refresh_session(token: str) -> Optional[tuple[int, str]]:
+    """Revoke a valid refresh token and return its user ID with a replacement token."""
+    now = _utc_now_iso()
+    token_hash = _token_hash(token)
+    replacement = secrets.token_urlsafe(48)
+    replacement_expires_at = (
+        datetime.now(timezone.utc) + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS)
+    ).isoformat()
+    with _get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            """
+            SELECT user_id FROM mobile_refresh_sessions
+            WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?
+            """,
+            (token_hash, now),
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute(
+            """
+            UPDATE mobile_refresh_sessions
+            SET revoked_at = ?
+            WHERE token_hash = ? AND revoked_at IS NULL
+            """,
+            (now, token_hash),
+        )
+        conn.execute(
+            """
+            INSERT INTO mobile_refresh_sessions (token_hash, user_id, expires_at, revoked_at)
+            VALUES (?, ?, ?, NULL)
+            """,
+            (_token_hash(replacement), row[0], replacement_expires_at),
+        )
+    return row[0], replacement
+
+
+def revoke_refresh_session(token: str) -> bool:
+    """Revoke an active refresh session, returning whether it was active."""
+    with _get_conn() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE mobile_refresh_sessions
+            SET revoked_at = ?
+            WHERE token_hash = ? AND revoked_at IS NULL
+            """,
+            (_utc_now_iso(), _token_hash(token)),
+        )
+    return cursor.rowcount == 1
 
 
 def save_competitor(
