@@ -125,6 +125,7 @@ def test_ios_command_sends_pairing_code(monkeypatch):
     monkeypatch.setattr("bot.handlers.bot.create_pairing_code", create_pairing_code)
     message = SimpleNamespace(reply_text=AsyncMock())
     update = SimpleNamespace(
+        effective_chat=SimpleNamespace(type="private"),
         effective_user=SimpleNamespace(id=42),
         effective_message=message,
     )

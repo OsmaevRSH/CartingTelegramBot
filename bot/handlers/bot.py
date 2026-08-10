@@ -854,6 +854,11 @@ async def best_today_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def ios_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Выдаёт одноразовый код привязки нативного iOS-приложения."""
+    if update.effective_chat.type != "private":
+        await update.effective_message.reply_text(
+            "🔒 Получить код для iOS можно только в личном чате с ботом."
+        )
+        return
     code = create_pairing_code(update.effective_user.id)
     await update.effective_message.reply_text(
         "📱 <b>Код для iOS</b>\n\n"
@@ -918,10 +923,10 @@ async def _set_default_commands(app: Application) -> None:
         BotCommand("app", "Открыть Mini App"),
         BotCommand("ios", "Подключить iOS-приложение"),
     ]
-    # Устанавливаем команды для всех контекстов
+    group_commands = [command for command in commands if command.command != "ios"]
     await app.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
-    await app.bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
-    await app.bot.set_my_commands(commands, scope=BotCommandScopeAllChatAdministrators())
+    await app.bot.set_my_commands(group_commands, scope=BotCommandScopeAllGroupChats())
+    await app.bot.set_my_commands(group_commands, scope=BotCommandScopeAllChatAdministrators())
     await app.bot.set_chat_menu_button(
         menu_button=MenuButtonWebApp(
             text="Mini App",

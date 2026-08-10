@@ -10,6 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 import core.database.db as db
 import api.main as api_main
+from bot.handlers.bot import ios_command
 import core.auth.tokens as auth_tokens
 from api.dependencies import require_mobile_user
 from core.auth.tokens import decode_access_token, issue_access_token
@@ -247,3 +248,24 @@ def test_non_test_startup_rejects_empty_auth_secret(monkeypatch):
 
     with pytest.raises(RuntimeError, match='AUTH_SECRET'):
         asyncio.run(api_main.startup())
+
+
+def test_ios_command_rejects_group_chat_without_issuing_code(monkeypatch):
+    class Message:
+        def __init__(self): self.replies = []
+        async def reply_text(self, text, **kwargs): self.replies.append(text)
+
+    class Chat: type = "group"
+    class User: id = 42
+    class Update:
+        effective_chat = Chat()
+        effective_user = User()
+        effective_message = Message()
+
+    issued = []
+    monkeypatch.setattr("bot.handlers.bot.create_pairing_code", lambda user_id: issued.append(user_id))
+
+    asyncio.run(ios_command(Update(), None))
+
+    assert issued == []
+    assert Update.effective_message.replies == ["🔒 Получить код для iOS можно только в личном чате с ботом."]
