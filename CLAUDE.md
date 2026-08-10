@@ -68,6 +68,7 @@ bot/
 api/
   main.py                      # FastAPI app, startup → init_db(), CORS
   routes/
+    auth.py                    # POST /api/mobile/auth/exchange, /refresh, /logout
     archive.py                 # GET /api/archive
     races.py                   # GET /api/races?href=, GET /api/races/full?href=
     stats.py                   # GET/POST/DELETE /api/stats/...
@@ -133,6 +134,9 @@ deployment/
 | GET | /api/leaderboard | Топ всех времён |
 | GET | /api/leaderboard/today?date= | Топ за день |
 | GET | /api/health | Health check |
+| POST | /api/mobile/auth/exchange | Обмен одноразового кода на access/refresh tokens |
+| POST | /api/mobile/auth/refresh | Ротация refresh session и выдача новой пары токенов |
+| POST | /api/mobile/auth/logout | Отзыв refresh session |
 
 ## Database Schema (SQLite)
 

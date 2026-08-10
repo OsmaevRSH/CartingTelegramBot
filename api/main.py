@@ -12,8 +12,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from core.config.config import AUTH_SECRET
 from core.database.db import init_db
-from api.routes import archive, races, stats, leaderboard
+from api.routes import archive, auth, races, stats, leaderboard
 
 app = FastAPI(
     title="CartingBot API",
@@ -32,10 +33,13 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
+    if not AUTH_SECRET and "PYTEST_CURRENT_TEST" not in os.environ:
+        raise RuntimeError("AUTH_SECRET must be configured")
     init_db()
 
 
 app.include_router(archive.router, prefix="/api", tags=["archive"])
+app.include_router(auth.router, prefix="/api", tags=["mobile-auth"])
 app.include_router(races.router, prefix="/api", tags=["races"])
 app.include_router(stats.router, prefix="/api", tags=["stats"])
 app.include_router(leaderboard.router, prefix="/api", tags=["leaderboard"])
