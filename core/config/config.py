@@ -14,6 +14,11 @@ except ImportError:
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
+AUTH_SECRET = os.getenv('AUTH_SECRET', '')
+ACCESS_TOKEN_TTL_SECONDS = int(os.getenv('ACCESS_TOKEN_TTL_SECONDS', '900'))
+REFRESH_TOKEN_TTL_SECONDS = int(os.getenv('REFRESH_TOKEN_TTL_SECONDS', '2592000'))
+PAIRING_CODE_TTL_SECONDS = int(os.getenv('PAIRING_CODE_TTL_SECONDS', '600'))
+
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(ROOT_DIR / "data" / "races.db"))
 
