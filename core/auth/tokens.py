@@ -1,6 +1,7 @@
 """Issue and validate short-lived mobile and Telegram Login tokens."""
 
 import hashlib
+import logging
 import hmac
 import re
 from collections import OrderedDict
@@ -31,6 +32,7 @@ _TELEGRAM_UNKNOWN_KID_CACHE_SECONDS = 60
 _TELEGRAM_UNKNOWN_KID_CACHE_SIZE = 64
 _TELEGRAM_PROFILE_FIELD_MAX_LENGTH = 256
 _TELEGRAM_NO_MATCHING_KEY_ERROR = "Unable to find a signing key that matches:"
+logger = logging.getLogger(__name__)
 _TELEGRAM_JWK_CLIENT_LOCK = RLock()
 _telegram_jwk_client: Optional[PyJWKClient] = None
 _telegram_unknown_kids: OrderedDict[str, float] = OrderedDict()
@@ -164,6 +166,7 @@ def validate_telegram_id_token(id_token: str) -> TelegramIdentity:
         )
         user_id = _telegram_user_id(claims)
     except (jwt.PyJWTError, KeyError, TypeError, ValueError, OSError) as exc:
+        logger.warning("Telegram native ID token rejected: %s", type(exc).__name__)
         raise ValueError("Invalid Telegram ID token") from exc
     return TelegramIdentity(
         user_id=user_id,

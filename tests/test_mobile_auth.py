@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import asyncio
+import logging
 import re
 import sqlite3
 from base64 import urlsafe_b64encode
@@ -129,6 +130,20 @@ def test_native_exchange_rejects_wrong_signature_or_audience(client, telegram_jw
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+def test_native_exchange_logs_failure_kind_without_logging_the_id_token(
+    client, telegram_jwks, caplog
+):
+    with caplog.at_level(logging.WARNING, logger="core.auth.tokens"):
+        response = client.post(
+            "/api/mobile/auth/telegram/native/exchange", json={"id_token": "invalid"}
+        )
+
+    assert response.status_code == 401
+    assert "DecodeError" in caplog.text
+    assert "id_token" not in caplog.text
+    assert "invalid" not in caplog.text
 
 
 def test_native_exchange_rejects_wrong_audience(client, telegram_jwks):
