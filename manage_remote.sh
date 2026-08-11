@@ -141,11 +141,6 @@ function full_update() {
         return 1
     fi
 
-    if [ ! -r "secrets/xray-telegram.json" ]; then
-        colored_echo "❌ Нет прав на чтение secrets/xray-telegram.json. Обновление отменено." $RED
-        return 1
-    fi
-
     if ! git diff --quiet -- . ':(exclude)data/races.db' || \
        ! git diff --cached --quiet -- . ':(exclude)data/races.db'; then
         colored_echo "❌ Есть незакоммиченные изменения кода. Обновление отменено, чтобы ничего не перезаписать." $RED

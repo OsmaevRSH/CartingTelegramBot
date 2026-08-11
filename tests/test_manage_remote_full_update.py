@@ -75,3 +75,10 @@ def test_full_update_runs_xray_validation_with_the_image_entrypoint_once():
 
     assert "--entrypoint xray carting-xray run -test -c /etc/xray/config.json" in body
     assert "carting-xray xray run -test" not in body
+
+
+def test_full_update_accepts_a_root_owned_xray_secret_for_container_validation():
+    body = _full_update_body()
+
+    assert '[ ! -f "secrets/xray-telegram.json" ]' in body
+    assert '[ ! -r "secrets/xray-telegram.json" ]' not in body
