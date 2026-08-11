@@ -84,24 +84,27 @@ def telegram_jwks(monkeypatch):
 def sign_telegram_id_token(
     private_key,
     *,
-    sub: str,
+    sub: object,
     aud: str,
     telegram_id: Optional[object] = None,
     expires_at: Optional[datetime] = None,
     issuer: str = "https://oauth.telegram.org",
     kid: str = "test-key",
+    include_sub: bool = True,
     **profile_claims: str,
 ) -> str:
     now = datetime.now(timezone.utc)
+    claims = {
+        "id": sub if telegram_id is None else telegram_id,
+        "aud": aud,
+        "iss": issuer,
+        "exp": expires_at or now + timedelta(minutes=5),
+        **profile_claims,
+    }
+    if include_sub:
+        claims["sub"] = sub
     return jwt.encode(
-        {
-            "id": sub if telegram_id is None else telegram_id,
-            "sub": sub,
-            "aud": aud,
-            "iss": issuer,
-            "exp": expires_at or now + timedelta(minutes=5),
-            **profile_claims,
-        },
+        claims,
         private_key,
         algorithm="RS256",
         headers={"kid": kid},
@@ -121,6 +124,67 @@ def test_native_exchange_accepts_telegram_jwt_and_returns_carting_tokens(
 
     assert response.status_code == 200
     assert response.json()["expires_in"] == 900
+
+
+def test_native_exchange_accepts_oidc_subject_and_official_profile_claims(
+    client, telegram_jwks, pairing_db
+):
+    token = sign_telegram_id_token(
+        telegram_jwks.private_key,
+        sub="telegram-opaque-subject",
+        telegram_id=42,
+        aud="7525532588",
+        name="Alice OIDC",
+        given_name="Alice",
+        family_name="Smith",
+        preferred_username="alice",
+        picture="https://example.test/alice.jpg",
+    )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+
+    assert response.status_code == 200
+    with sqlite3.connect(pairing_db) as conn:
+        assert conn.execute(
+            """
+            SELECT telegram_name, telegram_username, photo_url
+            FROM user_profiles WHERE user_id = 42
+            """
+        ).fetchone() == ("Alice OIDC", "alice", "https://example.test/alice.jpg")
+
+
+def test_native_exchange_preserves_legacy_profile_claim_fallbacks(
+    client, telegram_jwks, pairing_db
+):
+    token = sign_telegram_id_token(
+        telegram_jwks.private_key,
+        sub="legacy-subject",
+        telegram_id=43,
+        aud="7525532588",
+        first_name="Legacy",
+        last_name="User",
+        username="legacy_user",
+        photo_url="https://example.test/legacy.jpg",
+    )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+
+    assert response.status_code == 200
+    with sqlite3.connect(pairing_db) as conn:
+        assert conn.execute(
+            """
+            SELECT telegram_name, telegram_username, photo_url
+            FROM user_profiles WHERE user_id = 43
+            """
+        ).fetchone() == (
+            "Legacy User",
+            "legacy_user",
+            "https://example.test/legacy.jpg",
+        )
 
 
 def test_native_exchange_rejects_wrong_signature_or_audience(client, telegram_jwks):
@@ -223,12 +287,19 @@ def test_native_exchange_rejects_nonpositive_numeric_identity(client, telegram_j
     assert response.json() == {"detail": "Не удалось подтвердить вход"}
 
 
-def test_native_exchange_rejects_mismatched_numeric_identity(client, telegram_jwks):
+@pytest.mark.parametrize(
+    ("sub", "include_sub"),
+    [("", True), ("   ", True), (42, True), ("ignored", False)],
+)
+def test_native_exchange_rejects_missing_empty_or_nonstring_subject(
+    client, telegram_jwks, sub, include_sub
+):
     token = sign_telegram_id_token(
         telegram_jwks.private_key,
-        sub="42",
-        telegram_id="43",
+        sub=sub,
+        telegram_id="42",
         aud="7525532588",
+        include_sub=include_sub,
     )
 
     response = client.post(

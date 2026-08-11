@@ -47,9 +47,12 @@ class TelegramIdentity:
     last_name: Optional[str] = None
     username: Optional[str] = None
     photo_url: Optional[str] = None
+    name: Optional[str] = None
 
     @property
     def telegram_name(self) -> Optional[str]:
+        if self.name:
+            return self.name
         name = " ".join(
             part for part in (self.first_name, self.last_name) if part
         )
@@ -94,8 +97,9 @@ def _telegram_user_id(claims: Mapping[str, object]) -> int:
         raise ValueError("Invalid Telegram user ID")
     if user_id <= 0 or user_id > 2**63 - 1:
         raise ValueError("Invalid Telegram user ID")
-    if claims.get("sub") != str(user_id):
-        raise ValueError("Telegram subject does not match ID")
+    subject = claims.get("sub")
+    if not isinstance(subject, str) or not subject.strip():
+        raise ValueError("Invalid Telegram subject")
     return user_id
 
 
@@ -170,10 +174,23 @@ def validate_telegram_id_token(id_token: str) -> TelegramIdentity:
         raise ValueError("Invalid Telegram ID token") from exc
     return TelegramIdentity(
         user_id=user_id,
-        first_name=_safe_profile_claim(claims, "first_name"),
-        last_name=_safe_profile_claim(claims, "last_name"),
-        username=_safe_profile_claim(claims, "username"),
-        photo_url=_safe_profile_claim(claims, "photo_url"),
+        name=_safe_profile_claim(claims, "name"),
+        first_name=(
+            _safe_profile_claim(claims, "given_name")
+            or _safe_profile_claim(claims, "first_name")
+        ),
+        last_name=(
+            _safe_profile_claim(claims, "family_name")
+            or _safe_profile_claim(claims, "last_name")
+        ),
+        username=(
+            _safe_profile_claim(claims, "preferred_username")
+            or _safe_profile_claim(claims, "username")
+        ),
+        photo_url=(
+            _safe_profile_claim(claims, "picture")
+            or _safe_profile_claim(claims, "photo_url")
+        ),
     )
 
 
