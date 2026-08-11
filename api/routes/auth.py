@@ -1,5 +1,6 @@
 """Mobile Telegram Login and session lifecycle endpoints."""
 
+import asyncio
 import html
 import re
 import secrets
@@ -350,7 +351,7 @@ async def exchange_telegram_native_id_token(
     request: TelegramNativeExchangeRequest,
 ) -> TokenResponse:
     try:
-        identity = validate_telegram_id_token(request.id_token)
+        identity = await asyncio.to_thread(validate_telegram_id_token, request.id_token)
     except ValueError:
         raise _callback_rejected()
     try:

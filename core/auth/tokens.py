@@ -3,9 +3,11 @@
 import hashlib
 import hmac
 import re
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from threading import RLock
+from time import monotonic
 from typing import Mapping, Optional
 
 import jwt
@@ -25,9 +27,12 @@ _TELEGRAM_HASH_RE = re.compile(r"^[0-9A-Fa-f]{64}$")
 _TELEGRAM_ISSUER = "https://oauth.telegram.org"
 _TELEGRAM_JWKS_CACHE_SECONDS = 300
 _TELEGRAM_JWKS_MAX_KEYS = 16
+_TELEGRAM_UNKNOWN_KID_CACHE_SECONDS = 60
+_TELEGRAM_UNKNOWN_KID_CACHE_SIZE = 64
 _TELEGRAM_PROFILE_FIELD_MAX_LENGTH = 256
 _TELEGRAM_JWK_CLIENT_LOCK = RLock()
 _telegram_jwk_client: Optional[PyJWKClient] = None
+_telegram_unknown_kids: OrderedDict[str, float] = OrderedDict()
 
 
 @dataclass(frozen=True)
@@ -91,6 +96,33 @@ def _telegram_user_id(claims: Mapping[str, object]) -> int:
     return user_id
 
 
+def _telegram_key_id(id_token: str) -> str:
+    kid = jwt.get_unverified_header(id_token).get("kid")
+    if not isinstance(kid, str) or not kid or len(kid) > 128:
+        raise ValueError("Invalid Telegram key ID")
+    return kid
+
+
+def _is_recent_unknown_telegram_key(kid: str, now: float) -> bool:
+    while _telegram_unknown_kids:
+        oldest_kid, expires_at = next(iter(_telegram_unknown_kids.items()))
+        if expires_at > now:
+            break
+        _telegram_unknown_kids.pop(oldest_kid)
+    expires_at = _telegram_unknown_kids.get(kid)
+    if expires_at is None or expires_at <= now:
+        return False
+    _telegram_unknown_kids.move_to_end(kid)
+    return True
+
+
+def _remember_unknown_telegram_key(kid: str, now: float) -> None:
+    _telegram_unknown_kids[kid] = now + _TELEGRAM_UNKNOWN_KID_CACHE_SECONDS
+    _telegram_unknown_kids.move_to_end(kid)
+    while len(_telegram_unknown_kids) > _TELEGRAM_UNKNOWN_KID_CACHE_SIZE:
+        _telegram_unknown_kids.popitem(last=False)
+
+
 def validate_telegram_id_token(id_token: str) -> TelegramIdentity:
     """Validate a Telegram native ID token and return only safe identity data."""
     if (
@@ -101,16 +133,26 @@ def validate_telegram_id_token(id_token: str) -> TelegramIdentity:
     ):
         raise ValueError("Invalid Telegram ID token")
     try:
+        kid = _telegram_key_id(id_token)
         with _TELEGRAM_JWK_CLIENT_LOCK:
-            signing_key = get_telegram_jwk_client().get_signing_key_from_jwt(id_token)
-            claims = jwt.decode(
-                id_token,
-                signing_key.key,
-                algorithms=["RS256"],
-                audience=TELEGRAM_LOGIN_CLIENT_ID,
-                issuer=_TELEGRAM_ISSUER,
-                options={"require": ["exp", "iss", "aud", "sub"]},
-            )
+            now = monotonic()
+            if _is_recent_unknown_telegram_key(kid, now):
+                raise ValueError("Unknown Telegram key")
+            try:
+                signing_key = get_telegram_jwk_client().get_signing_key_from_jwt(
+                    id_token
+                )
+            except jwt.PyJWKClientError:
+                _remember_unknown_telegram_key(kid, now)
+                raise
+        claims = jwt.decode(
+            id_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=TELEGRAM_LOGIN_CLIENT_ID,
+            issuer=_TELEGRAM_ISSUER,
+            options={"require": ["exp", "iss", "aud", "sub"]},
+        )
         user_id = _telegram_user_id(claims)
     except (jwt.PyJWTError, KeyError, TypeError, ValueError, OSError) as exc:
         raise ValueError("Invalid Telegram ID token") from exc

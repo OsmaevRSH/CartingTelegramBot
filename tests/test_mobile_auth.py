@@ -81,21 +81,29 @@ def telegram_jwks(monkeypatch):
 
 
 def sign_telegram_id_token(
-    private_key, *, sub: str, aud: str, **profile_claims: str
+    private_key,
+    *,
+    sub: str,
+    aud: str,
+    telegram_id: Optional[object] = None,
+    expires_at: Optional[datetime] = None,
+    issuer: str = "https://oauth.telegram.org",
+    kid: str = "test-key",
+    **profile_claims: str,
 ) -> str:
     now = datetime.now(timezone.utc)
     return jwt.encode(
         {
-            "id": sub,
+            "id": sub if telegram_id is None else telegram_id,
             "sub": sub,
             "aud": aud,
-            "iss": "https://oauth.telegram.org",
-            "exp": now + timedelta(minutes=5),
+            "iss": issuer,
+            "exp": expires_at or now + timedelta(minutes=5),
             **profile_claims,
         },
         private_key,
         algorithm="RS256",
-        headers={"kid": "test-key"},
+        headers={"kid": kid},
     )
 
 
@@ -134,6 +142,116 @@ def test_native_exchange_rejects_wrong_audience(client, telegram_jwks):
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+def test_native_exchange_rejects_token_signed_by_unrelated_private_key(
+    client, telegram_jwks
+):
+    unrelated_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = sign_telegram_id_token(
+        unrelated_key, sub="42", aud="7525532588"
+    )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+def test_native_exchange_rejects_expired_valid_signature(client, telegram_jwks):
+    token = sign_telegram_id_token(
+        telegram_jwks.private_key,
+        sub="42",
+        aud="7525532588",
+        expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+    )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+def test_native_exchange_rejects_wrong_issuer(client, telegram_jwks):
+    token = sign_telegram_id_token(
+        telegram_jwks.private_key,
+        sub="42",
+        aud="7525532588",
+        issuer="https://attacker.example",
+    )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+def test_native_exchange_rejects_nonpositive_numeric_identity(client, telegram_jwks):
+    token = sign_telegram_id_token(
+        telegram_jwks.private_key,
+        sub="0",
+        telegram_id="0",
+        aud="7525532588",
+    )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+def test_native_exchange_rejects_mismatched_numeric_identity(client, telegram_jwks):
+    token = sign_telegram_id_token(
+        telegram_jwks.private_key,
+        sub="42",
+        telegram_id="43",
+        aud="7525532588",
+    )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+def test_native_exchange_throttles_unknown_jwk_id_fetches(
+    client, monkeypatch, telegram_jwks
+):
+    attempts = []
+
+    class UnknownKidJwkClient:
+        def get_signing_key_from_jwt(self, _id_token):
+            attempts.append(1)
+            raise jwt.PyJWKClientError("Unknown key")
+
+    monkeypatch.setattr(
+        auth_tokens, "get_telegram_jwk_client", lambda: UnknownKidJwkClient()
+    )
+    token = sign_telegram_id_token(
+        telegram_jwks.private_key,
+        sub="42",
+        aud="7525532588",
+        kid="unknown-test-key",
+    )
+
+    for _ in range(2):
+        response = client.post(
+            "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+        )
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+    assert attempts == [1]
 
 
 def test_native_exchange_rolls_back_profile_when_refresh_session_creation_fails(
