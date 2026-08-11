@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Mapping, Optional
 
@@ -12,6 +13,7 @@ from core.config.config import AUTH_SECRET
 ACCESS_TOKEN_LIFETIME_SECONDS = 900
 TELEGRAM_AUTH_MAX_AGE_SECONDS = 10 * 60
 TELEGRAM_AUTH_FUTURE_TOLERANCE_SECONDS = 60
+_TELEGRAM_HASH_RE = re.compile(r"^[0-9A-Fa-f]{64}$")
 
 
 def validate_telegram_login_payload(
@@ -24,6 +26,8 @@ def validate_telegram_login_payload(
         raise ValueError("Telegram Login is not configured")
 
     provided_hash = payload.get("hash", "")
+    if not _TELEGRAM_HASH_RE.fullmatch(provided_hash):
+        raise ValueError("Invalid Telegram Login signature")
     signed_fields = {
         key: value for key, value in payload.items() if key != "hash"
     }

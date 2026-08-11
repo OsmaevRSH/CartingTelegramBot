@@ -4,6 +4,8 @@ FastAPI backend для Telegram WebApp CartingBot
 """
 import sys
 import os
+from typing import Any, Awaitable, Callable, Dict
+from urllib.parse import parse_qsl
 
 # api/main.py → api → project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +17,43 @@ from fastapi.responses import FileResponse
 from core.config.config import AUTH_SECRET
 from core.database.db import init_db
 from api.routes import archive, auth, races, stats, leaderboard
+
+_TELEGRAM_LOGIN_PATH = "/api/mobile/auth/telegram/login"
+_TELEGRAM_LOGIN_STATE_SCOPE_KEY = "carting.telegram_login_state"
+
+
+class RedactTelegramLoginStateMiddleware:
+    """Keep browser-login state out of Uvicorn's access-log request line."""
+
+    def __init__(self, app: Callable[..., Awaitable[None]]):
+        self.app = app
+
+    async def __call__(
+        self,
+        scope: Dict[str, Any],
+        receive: Callable[[], Awaitable[Dict[str, Any]]],
+        send: Callable[[Dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        if (
+            scope["type"] == "http"
+            and scope["method"] == "GET"
+            and scope["path"] == _TELEGRAM_LOGIN_PATH
+        ):
+            raw_query = scope.get("query_string", b"")
+            scope["query_string"] = b""
+            try:
+                pairs = parse_qsl(
+                    raw_query.decode("ascii"),
+                    keep_blank_values=True,
+                    strict_parsing=True,
+                    max_num_fields=2,
+                )
+            except (UnicodeDecodeError, ValueError):
+                pairs = []
+            states = [value for key, value in pairs if key == "state"]
+            if len(states) == 1:
+                scope[_TELEGRAM_LOGIN_STATE_SCOPE_KEY] = states[0]
+        await self.app(scope, receive, send)
 
 app = FastAPI(
     title="CartingBot API",
@@ -29,6 +68,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RedactTelegramLoginStateMiddleware)
 
 
 @app.on_event("startup")

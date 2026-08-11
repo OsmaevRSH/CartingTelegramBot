@@ -5,6 +5,7 @@ import re
 import sqlite3
 from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
@@ -189,6 +190,58 @@ def test_telegram_login_page_is_available_only_for_live_state(client, monkeypatc
     assert "unknown-state" not in rejected.text
 
 
+def test_telegram_login_state_is_redacted_before_uvicorn_access_logging(
+    client, monkeypatch
+):
+    monkeypatch.setattr(auth_routes, "TELEGRAM_LOGIN_BOT_USERNAME", "CartingTestBot")
+    started = _start_telegram_login(client, monkeypatch)
+    captured_scope = {}
+
+    async def downstream(scope, receive, send):
+        captured_scope.update(scope)
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    async def receive():
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        return None
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/mobile/auth/telegram/login",
+        "query_string": f"state={started['state']}".encode(),
+        "headers": [],
+    }
+
+    asyncio.run(
+        api_main.RedactTelegramLoginStateMiddleware(downstream)(
+            scope,
+            receive,
+            send,
+        )
+    )
+
+    assert started["state"].encode() not in captured_scope["query_string"]
+    assert captured_scope["query_string"] == b""
+    assert client.get(
+        "/api/mobile/auth/telegram/login", params={"state": started["state"]}
+    ).status_code == 200
+
+
+def test_reverse_proxies_skip_telegram_login_access_logs():
+    root = Path(__file__).resolve().parent.parent
+
+    caddyfile = (root / "deployment" / "Caddyfile").read_text()
+    nginx_config = (root / "deployment" / "webapp" / "nginx.conf").read_text()
+
+    assert "log_skip @telegram_login" in caddyfile
+    assert "location = /api/mobile/auth/telegram/login" in nginx_config
+    assert "access_log off;" in nginx_config
+
+
 def test_telegram_callback_provisions_profile_and_redirects_with_opaque_code(
     client, monkeypatch, pairing_db
 ):
@@ -254,6 +307,25 @@ def test_telegram_callback_rejects_altered_or_missing_hash(
     assert response.json() == {"detail": "Не удалось подтвердить вход"}
 
 
+def test_telegram_callback_rejects_non_ascii_hash_without_server_error(
+    client, monkeypatch
+):
+    bot_token = "123456:test-token"
+    started = _start_telegram_login(client, monkeypatch)
+    payload = _telegram_payload(bot_token)
+    payload["hash"] = "я" * 64
+    monkeypatch.setattr(auth_routes, "BOT_TOKEN", bot_token)
+
+    response = client.post(
+        "/api/mobile/auth/telegram/callback",
+        data={"state": started["state"], **payload},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
 @pytest.mark.parametrize("telegram_id", ["not-a-number", "", "-42", "0"])
 def test_telegram_callback_rejects_malformed_telegram_id(
     client, monkeypatch, telegram_id
@@ -305,6 +377,102 @@ def test_telegram_callback_requires_live_transaction_before_accepting_payload(
 
     assert response.status_code == 401
     assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+def test_telegram_login_page_rejects_completed_transaction(client, monkeypatch):
+    bot_token = "123456:test-token"
+    monkeypatch.setattr(auth_routes, "TELEGRAM_LOGIN_BOT_USERNAME", "CartingTestBot")
+    started = _start_telegram_login(client, monkeypatch)
+    _callback_location(
+        client,
+        monkeypatch,
+        state=started["state"],
+        payload=_telegram_payload(bot_token),
+        bot_token=bot_token,
+    )
+
+    response = client.get(
+        "/api/mobile/auth/telegram/login", params={"state": started["state"]}
+    )
+
+    assert response.status_code == 401
+    assert started["state"] not in response.text
+
+
+def test_telegram_callback_rolls_back_completion_when_profile_provisioning_fails(
+    client, monkeypatch, pairing_db
+):
+    bot_token = "123456:test-token"
+    started = _start_telegram_login(client, monkeypatch)
+    with sqlite3.connect(pairing_db) as conn:
+        conn.execute(
+            """
+            CREATE TRIGGER fail_telegram_profile_provisioning
+            BEFORE INSERT ON user_profiles
+            WHEN NEW.user_id = 42
+            BEGIN
+                SELECT RAISE(ABORT, 'forced profile failure');
+            END
+            """
+        )
+
+    monkeypatch.setattr(auth_routes, "BOT_TOKEN", bot_token)
+    response = client.post(
+        "/api/mobile/auth/telegram/callback",
+        data={"state": started["state"], **_telegram_payload(bot_token)},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Не удалось завершить вход"}
+    with sqlite3.connect(pairing_db) as conn:
+        assert conn.execute(
+            """
+            SELECT completed_at, user_id
+            FROM mobile_telegram_login_transactions
+            WHERE state_hash = ?
+            """,
+            (hashlib.sha256(started["state"].encode()).hexdigest(),),
+        ).fetchone() == (None, None)
+        assert conn.execute(
+            "SELECT COUNT(*) FROM mobile_telegram_authorization_codes"
+        ).fetchone() == (0,)
+
+
+def test_telegram_exchange_keeps_code_usable_when_refresh_session_creation_fails(
+    client, monkeypatch, pairing_db
+):
+    verifier = "v" * 43
+    bot_token = "123456:test-token"
+    started = _start_telegram_login(client, monkeypatch, verifier)
+    location = _callback_location(
+        client,
+        monkeypatch,
+        state=started["state"],
+        payload=_telegram_payload(bot_token),
+        bot_token=bot_token,
+    )
+    code = parse_qs(urlsplit(location).query)["code"][0]
+    request = {"code": code, "state": started["state"], "code_verifier": verifier}
+    with sqlite3.connect(pairing_db) as conn:
+        conn.execute(
+            """
+            CREATE TRIGGER fail_refresh_session_creation
+            BEFORE INSERT ON mobile_refresh_sessions
+            BEGIN
+                SELECT RAISE(ABORT, 'forced refresh failure');
+            END
+            """
+        )
+
+    failed = client.post("/api/mobile/auth/telegram/exchange", json=request)
+
+    assert failed.status_code == 503
+    assert failed.json() == {"detail": "Не удалось завершить вход"}
+    with sqlite3.connect(pairing_db) as conn:
+        conn.execute("DROP TRIGGER fail_refresh_session_creation")
+
+    assert client.post("/api/mobile/auth/telegram/exchange", json=request).status_code == 200
 
 
 def test_telegram_callback_missing_optional_fields_preserves_existing_profile(

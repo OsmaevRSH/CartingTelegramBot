@@ -3,6 +3,7 @@
 import html
 import re
 import secrets
+import sqlite3
 from typing import Dict
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
@@ -22,16 +23,13 @@ from core.config.config import (
 )
 from core.database.db import (
     LOGIN_TRANSACTION_TTL_SECONDS,
-    complete_telegram_login_transaction,
+    complete_telegram_login_and_issue_authorization_code,
     consume_pairing_code,
-    consume_telegram_authorization_code,
-    create_refresh_session,
+    consume_telegram_authorization_code_and_create_refresh_session,
     create_telegram_login_transaction,
     find_telegram_login_transaction,
-    issue_telegram_authorization_code,
     revoke_refresh_session,
     rotate_refresh_session,
-    upsert_user_profile,
 )
 
 router = APIRouter(prefix="/mobile/auth")
@@ -256,8 +254,11 @@ async def start_telegram_login(request: TelegramStartRequest) -> TelegramStartRe
 
 
 @router.get("/telegram/login", response_class=HTMLResponse)
-async def telegram_login_page(state: str) -> HTMLResponse:
-    if find_telegram_login_transaction(state) is None:
+async def telegram_login_page(request: Request) -> HTMLResponse:
+    state_value = request.scope.get("carting.telegram_login_state")
+    if not isinstance(state_value, str):
+        return _login_error_response(status.HTTP_401_UNAUTHORIZED)
+    if find_telegram_login_transaction(state_value) is None:
         return _login_error_response(status.HTTP_401_UNAUTHORIZED)
     bot_username = TELEGRAM_LOGIN_BOT_USERNAME.strip().lstrip("@")
     if not _BOT_USERNAME_RE.fullmatch(bot_username):
@@ -290,17 +291,20 @@ async def telegram_login_callback(request: Request) -> RedirectResponse:
     last_name = form.get("last_name", "").strip()
     if not first_name:
         raise _callback_rejected()
-    if not complete_telegram_login_transaction(state_value, user_id):
-        raise _callback_rejected()
-
     telegram_name = " ".join(part for part in (first_name, last_name) if part)
-    upsert_user_profile(
-        user_id,
-        telegram_name,
-        form.get("username") or None,
-        form.get("photo_url") or None,
-    )
-    code = issue_telegram_authorization_code(state_value)
+    try:
+        code = complete_telegram_login_and_issue_authorization_code(
+            state_value,
+            user_id,
+            telegram_name,
+            form.get("username") or None,
+            form.get("photo_url") or None,
+        )
+    except sqlite3.Error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Не удалось завершить вход",
+        )
     if code is None:
         raise _callback_rejected()
     location = "carting://auth/callback?" + urlencode(
@@ -320,15 +324,22 @@ async def exchange_telegram_code(request: TelegramExchangeRequest) -> TokenRespo
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Недействительный или истёкший вход",
         )
-    user_id = consume_telegram_authorization_code(
-        request.code, request.state, request.code_verifier
-    )
-    if user_id is None:
+    try:
+        exchanged = consume_telegram_authorization_code_and_create_refresh_session(
+            request.code, request.state, request.code_verifier
+        )
+    except sqlite3.Error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Не удалось завершить вход",
+        )
+    if exchanged is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Недействительный или истёкший вход",
         )
-    return _tokens(user_id, create_refresh_session(user_id))
+    user_id, refresh_token = exchanged
+    return _tokens(user_id, refresh_token)
 
 
 @router.post("/exchange", response_model=TokenResponse)

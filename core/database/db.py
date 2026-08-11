@@ -259,7 +259,7 @@ def find_telegram_login_transaction(state: str) -> Optional[Dict[str, Any]]:
             """
             SELECT id, user_id, created_at, expires_at, completed_at
             FROM mobile_telegram_login_transactions
-            WHERE state_hash = ? AND expires_at > ?
+            WHERE state_hash = ? AND expires_at > ? AND completed_at IS NULL
             """,
             (_token_hash(state), now),
         ).fetchone()
@@ -326,6 +326,54 @@ def issue_telegram_authorization_code(state: str) -> Optional[str]:
     return code
 
 
+def complete_telegram_login_and_issue_authorization_code(
+    state: str,
+    user_id: int,
+    telegram_name: str,
+    telegram_username: Optional[str] = None,
+    photo_url: Optional[str] = None,
+) -> Optional[str]:
+    """Atomically provision a profile, complete login, and issue one code."""
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    expires_at = (now + timedelta(seconds=AUTHORIZATION_CODE_TTL_SECONDS)).isoformat()
+    code = secrets.token_urlsafe(32)
+    with _get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _purge_expired_telegram_auth_records(conn, now_iso)
+        cursor = conn.execute(
+            """
+            UPDATE mobile_telegram_login_transactions
+            SET completed_at = ?, user_id = ?
+            WHERE state_hash = ?
+              AND completed_at IS NULL
+              AND expires_at > ?
+            """,
+            (now_iso, user_id, _token_hash(state), now_iso),
+        )
+        if cursor.rowcount != 1:
+            return None
+        _upsert_user_profile(
+            conn, user_id, telegram_name, telegram_username, photo_url
+        )
+        transaction = conn.execute(
+            """
+            SELECT id FROM mobile_telegram_login_transactions
+            WHERE state_hash = ?
+            """,
+            (_token_hash(state),),
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO mobile_telegram_authorization_codes
+                (code_hash, user_id, transaction_id, created_at, expires_at, consumed_at)
+            VALUES (?, ?, ?, ?, ?, NULL)
+            """,
+            (_token_hash(code), user_id, transaction[0], now_iso, expires_at),
+        )
+    return code
+
+
 def consume_telegram_authorization_code(
     code: str, state: str, code_verifier: str
 ) -> Optional[int]:
@@ -365,6 +413,57 @@ def consume_telegram_authorization_code(
         if cursor.rowcount != 1:
             return None
     return row[0]
+
+
+def consume_telegram_authorization_code_and_create_refresh_session(
+    code: str, state: str, code_verifier: str
+) -> Optional[tuple[int, str]]:
+    """Atomically redeem a code and create its durable refresh session."""
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    code_hash = _token_hash(code)
+    state_hash = _token_hash(state)
+    challenge_hash = _token_hash(_s256_code_challenge(code_verifier))
+    refresh_token = secrets.token_urlsafe(48)
+    refresh_expires_at = (now + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS)).isoformat()
+    with _get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _purge_expired_telegram_auth_records(conn, now_iso)
+        row = conn.execute(
+            """
+            SELECT code.user_id
+            FROM mobile_telegram_authorization_codes AS code
+            JOIN mobile_telegram_login_transactions AS login_transaction
+                ON login_transaction.id = code.transaction_id
+            WHERE code.code_hash = ?
+              AND code.consumed_at IS NULL
+              AND code.expires_at > ?
+              AND login_transaction.state_hash = ?
+              AND login_transaction.code_challenge_hash = ?
+              AND login_transaction.completed_at IS NOT NULL
+            """,
+            (code_hash, now_iso, state_hash, challenge_hash),
+        ).fetchone()
+        if row is None:
+            return None
+        cursor = conn.execute(
+            """
+            UPDATE mobile_telegram_authorization_codes
+            SET consumed_at = ?
+            WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?
+            """,
+            (now_iso, code_hash, now_iso),
+        )
+        if cursor.rowcount != 1:
+            return None
+        conn.execute(
+            """
+            INSERT INTO mobile_refresh_sessions (token_hash, user_id, expires_at, revoked_at)
+            VALUES (?, ?, ?, NULL)
+            """,
+            (_token_hash(refresh_token), row[0], refresh_expires_at),
+        )
+    return row[0], refresh_token
 
 
 def create_pairing_code(user_id: int) -> str:
@@ -561,29 +660,38 @@ def get_all_competitors():
         return cur.fetchall()
 
 
-def upsert_user_profile(user_id: int, telegram_name: str, telegram_username: str = None, photo_url: str = None):
-    """Сохраняет или обновляет Telegram-имя, username и аватар пользователя."""
+def _upsert_user_profile(
+    conn: sqlite3.Connection,
+    user_id: int,
+    telegram_name: str,
+    telegram_username: Optional[str] = None,
+    photo_url: Optional[str] = None,
+) -> None:
     if not telegram_name or not telegram_name.strip():
         return
+    conn.execute(
+        """
+        INSERT INTO user_profiles (user_id, telegram_name, telegram_username, photo_url, updated_at)
+        VALUES (?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(user_id) DO UPDATE SET
+            telegram_name = excluded.telegram_name,
+            telegram_username = COALESCE(excluded.telegram_username, telegram_username),
+            photo_url = COALESCE(excluded.photo_url, photo_url),
+            updated_at = excluded.updated_at
+        """,
+        (
+            user_id,
+            telegram_name.strip(),
+            telegram_username.strip() if telegram_username else None,
+            photo_url if photo_url else None,
+        ),
+    )
+
+
+def upsert_user_profile(user_id: int, telegram_name: str, telegram_username: str = None, photo_url: str = None):
+    """Сохраняет или обновляет Telegram-имя, username и аватар пользователя."""
     with _get_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO user_profiles (user_id, telegram_name, telegram_username, photo_url, updated_at)
-            VALUES (?, ?, ?, ?, datetime('now'))
-            ON CONFLICT(user_id) DO UPDATE SET
-                telegram_name = excluded.telegram_name,
-                telegram_username = COALESCE(excluded.telegram_username, telegram_username),
-                photo_url = COALESCE(excluded.photo_url, photo_url),
-                updated_at = excluded.updated_at
-            """,
-            (
-                user_id,
-                telegram_name.strip(),
-                telegram_username.strip() if telegram_username else None,
-                photo_url if photo_url else None,
-            ),
-        )
-        conn.commit()
+        _upsert_user_profile(conn, user_id, telegram_name, telegram_username, photo_url)
 
 
 def get_all_users():

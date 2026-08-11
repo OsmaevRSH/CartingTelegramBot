@@ -1,3 +1,6 @@
 carting.ltheresi.com {
+    log
+    @telegram_login path /api/mobile/auth/telegram/login
+    log_skip @telegram_login
     reverse_proxy carting-webapp:80
 }
