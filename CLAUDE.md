@@ -47,6 +47,7 @@ carting/
 ./manage_remote.sh shell       # Войти в контейнер бота
 ./manage_remote.sh shell-api   # Войти в контейнер API
 ./manage_remote.sh backup      # Бэкап базы данных
+./manage_remote.sh full-update # Проверенный бэкап, Git pull и полное пересоздание сервисов
 ```
 
 ## Architecture

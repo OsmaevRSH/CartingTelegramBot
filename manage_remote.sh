@@ -36,7 +36,8 @@ function show_help() {
     echo "  status       - Показать статус сервисов"
     echo "  logs         - Показать логи"
     echo "  logs-f       - Показать логи в реальном времени"
-    echo "  update       - Обновить и перезапустить"
+    echo "  update       - Собрать и перезапустить сервисы без Git pull"
+    echo "  full-update  - Безопасно: бэкап БД, Git pull и полное пересоздание сервисов"
     echo "  shell        - Войти в контейнер бота"
     echo "  shell-api    - Войти в контейнер API"
     echo "  clean        - Удалить все данные и контейнеры"
@@ -121,6 +122,156 @@ function update_bot() {
     cd ..
 }
 
+function full_update() {
+    local database_path="data/races.db"
+    local backup_dir="backups"
+    local timestamp
+    local backup_file
+    local temporary_backup
+
+    colored_echo "🛡️  Запускаю безопасное полное обновление..." $BLUE
+
+    if [ ! -f "$database_path" ]; then
+        colored_echo "❌ База данных не найдена: $database_path. Обновление отменено." $RED
+        return 1
+    fi
+
+    if [ ! -f "secrets/xray-telegram.json" ]; then
+        colored_echo "❌ Не найден секретный конфиг Xray: secrets/xray-telegram.json. Обновление отменено." $RED
+        return 1
+    fi
+
+    if [ ! -r "secrets/xray-telegram.json" ]; then
+        colored_echo "❌ Нет прав на чтение secrets/xray-telegram.json. Обновление отменено." $RED
+        return 1
+    fi
+
+    if ! git diff --quiet -- . ':(exclude)data/races.db' || \
+       ! git diff --cached --quiet -- . ':(exclude)data/races.db'; then
+        colored_echo "❌ Есть незакоммиченные изменения кода. Обновление отменено, чтобы ничего не перезаписать." $RED
+        return 1
+    fi
+
+    if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+        colored_echo "❌ Есть неотслеживаемые файлы. Обновление отменено, чтобы Git pull не затёр их." $RED
+        return 1
+    fi
+
+    mkdir -p "$backup_dir"
+    timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    backup_file="$backup_dir/races-before-full-update-$timestamp.db"
+    temporary_backup="$backup_file.tmp"
+    umask 077
+
+    if ! python3 - "$database_path" "$temporary_backup" <<'PY'
+import sqlite3
+import sys
+
+source_path, backup_path = sys.argv[1:]
+source = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)
+destination = sqlite3.connect(backup_path)
+try:
+    source.backup(destination)
+    result = destination.execute("PRAGMA integrity_check").fetchone()[0]
+    if result != "ok":
+        raise RuntimeError(f"SQLite integrity_check failed: {result}")
+finally:
+    destination.close()
+    source.close()
+PY
+    then
+        rm -f "$temporary_backup"
+        colored_echo "❌ Не удалось создать проверенный бэкап БД. Обновление отменено." $RED
+        return 1
+    fi
+
+    mv "$temporary_backup" "$backup_file"
+    colored_echo "✅ Проверенный бэкап БД создан: $backup_file" $GREEN
+
+    if ! git fetch --prune origin main || ! git pull --ff-only origin main; then
+        colored_echo "❌ Git pull не выполнен. Контейнеры и рабочая БД не менялись." $RED
+        return 1
+    fi
+
+    cd deployment || return 1
+    if ! $DC config -q; then
+        colored_echo "❌ Docker Compose конфигурация невалидна. Контейнеры и рабочая БД не менялись." $RED
+        cd ..
+        return 1
+    fi
+
+    if ! $DC run --rm --no-deps --entrypoint xray carting-xray run -test -c /etc/xray/config.json; then
+        colored_echo "❌ Конфигурация Xray невалидна. Контейнеры и рабочая БД не менялись." $RED
+        cd ..
+        return 1
+    fi
+
+    if ! $DC up -d --build --force-recreate --remove-orphans; then
+        colored_echo "❌ Сервисы не удалось пересоздать. Бэкап сохранён: ../$backup_file" $RED
+        cd ..
+        return 1
+    fi
+
+    if ! wait_for_service_health "carting-xray" 60 || ! wait_for_service_health "carting-bot" 90; then
+        colored_echo "❌ Сервисы пересозданы, но не прошли healthcheck. Бэкап сохранён: ../$backup_file" $RED
+        cd ..
+        return 1
+    fi
+
+    if ! $DC exec -T carting-api python -c 'from urllib.request import urlopen; assert urlopen("http://127.0.0.1:8000/health", timeout=10).status == 200'; then
+        colored_echo "❌ API не прошёл проверку здоровья. Бэкап сохранён: ../$backup_file" $RED
+        cd ..
+        return 1
+    fi
+
+    cd ..
+    if ! python3 - "$database_path" <<'PY'
+import sqlite3
+import sys
+
+connection = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+try:
+    result = connection.execute("PRAGMA integrity_check").fetchone()[0]
+    if result != "ok":
+        raise RuntimeError(f"SQLite integrity_check failed: {result}")
+finally:
+    connection.close()
+PY
+    then
+        colored_echo "❌ После обновления БД не прошла integrity_check. Используйте бэкап: $backup_file" $RED
+        return 1
+    fi
+
+    colored_echo "✅ Полное обновление завершено. Бэкап БД: $backup_file" $GREEN
+}
+
+function wait_for_service_health() {
+    local service_name="$1"
+    local timeout_seconds="$2"
+    local elapsed=0
+    local container_id
+    local health_status
+
+    while [ "$elapsed" -lt "$timeout_seconds" ]; do
+        container_id="$($DC ps -q "$service_name")"
+        if [ -n "$container_id" ]; then
+            health_status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id")"
+            if [ "$health_status" = "healthy" ] || [ "$health_status" = "running" ]; then
+                return 0
+            fi
+            if [ "$health_status" = "unhealthy" ] || [ "$health_status" = "exited" ] || [ "$health_status" = "dead" ]; then
+                colored_echo "❌ $service_name: $health_status" $RED
+                return 1
+            fi
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    colored_echo "❌ Таймаут healthcheck для $service_name" $RED
+    return 1
+}
+
 function shell_bot() {
     colored_echo "🐚 Вход в контейнер бота..." $BLUE
     cd deployment
@@ -154,9 +305,31 @@ function clean_bot() {
 function backup_bot() {
     colored_echo "💾 Создаю резервную копию базы данных..." $BLUE
     if [ -f "data/races.db" ]; then
-        backup_file="backups/races_backup_$(date +%Y%m%d_%H%M%S).db"
+        local backup_file="backups/races_backup_$(date -u +%Y%m%dT%H%M%SZ).db"
+        local temporary_backup="$backup_file.tmp"
         mkdir -p backups
-        cp data/races.db "$backup_file"
+        umask 077
+        if ! python3 - "data/races.db" "$temporary_backup" <<'PY'
+import sqlite3
+import sys
+
+source = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+destination = sqlite3.connect(sys.argv[2])
+try:
+    source.backup(destination)
+    result = destination.execute("PRAGMA integrity_check").fetchone()[0]
+    if result != "ok":
+        raise RuntimeError(f"SQLite integrity_check failed: {result}")
+finally:
+    destination.close()
+    source.close()
+PY
+        then
+            rm -f "$temporary_backup"
+            colored_echo "❌ Не удалось создать проверенный бэкап базы данных!" $RED
+            return 1
+        fi
+        mv "$temporary_backup" "$backup_file"
         colored_echo "✅ Резервная копия создана: $backup_file" $GREEN
     else
         colored_echo "❌ База данных не найдена!" $RED
@@ -202,6 +375,9 @@ case "${1:-help}" in
         ;;
     update)
         update_bot
+        ;;
+    full-update)
+        full_update
         ;;
     shell)
         shell_bot
