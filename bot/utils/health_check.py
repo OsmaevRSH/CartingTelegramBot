@@ -2,11 +2,10 @@
 """
 Скрипт для проверки здоровья бота
 """
-import sys
 import os
 import asyncio
 import aiohttp
-from datetime import datetime, timedelta
+import sys
 
 # bot/utils/health_check.py → bot/utils → bot → project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -14,15 +13,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from core.database.db import get_all_competitors
 from core.parsers.parsers import ArchiveParser
 from core.models.models import ParsingError
-
-try:
-    from core.config.config import LOG_FILE
-except ImportError:
-    LOG_FILE = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "logs", "bot.log"
-    )
-
 
 async def check_website():
     """Проверяет доступность сайта kartchrono.com"""
@@ -64,21 +54,18 @@ def check_database():
         return False, f"Ошибка базы данных: {e}"
 
 
-def check_log_file():
-    """Проверяет наличие и актуальность лог файла"""
+def check_bot_process(proc_root="/proc"):
+    """Проверяет, что PID 1 контейнера — основной процесс бота."""
     try:
-        if os.path.exists(LOG_FILE):
-            stat = os.stat(LOG_FILE)
-            modified_time = datetime.fromtimestamp(stat.st_mtime)
-            now = datetime.now()
-            if now - modified_time < timedelta(hours=1):
-                return True, "Лог файл актуален"
-            else:
-                return False, "Лог файл устарел"
-        else:
-            return False, "Лог файл не найден"
+        cmdline_path = os.path.join(proc_root, "1", "cmdline")
+        with open(cmdline_path, "rb") as cmdline_file:
+            command = cmdline_file.read().decode(errors="replace")
     except Exception as e:
-        return False, f"Ошибка проверки лог файла: {e}"
+        return False, f"Ошибка проверки процесса бота: {e}"
+
+    if "bot/main.py" in command:
+        return True, "Процесс бота запущен"
+    return False, "PID 1 не является процессом бота"
 
 
 async def main():
@@ -103,10 +90,10 @@ async def main():
     print(f"   {'✅' if db_ok else '❌'} {db_msg}")
     all_ok = all_ok and db_ok
 
-    print("\n📝 Проверка лог файла...")
-    log_ok, log_msg = check_log_file()
-    print(f"   {'✅' if log_ok else '❌'} {log_msg}")
-    all_ok = all_ok and log_ok
+    print("\n🤖 Проверка процесса бота...")
+    bot_ok, bot_msg = check_bot_process()
+    print(f"   {'✅' if bot_ok else '❌'} {bot_msg}")
+    all_ok = all_ok and bot_ok
 
     print("\n" + "=" * 50)
     if all_ok:
