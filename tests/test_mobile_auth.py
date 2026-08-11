@@ -115,6 +115,28 @@ def _callback_location(
     return response.headers["location"]
 
 
+def test_legacy_pairing_implementation_and_exchange_route_are_absent(client):
+    project_root = Path(__file__).resolve().parents[1]
+    legacy_sources = {
+        "bot": project_root / "bot/handlers/bot.py",
+        "auth": project_root / "api/routes/auth.py",
+        "database": project_root / "core/database/db.py",
+    }
+
+    assert client.post(
+        "/api/mobile/auth/exchange", json={"code": "legacy-pairing-code"}
+    ).status_code == 404
+    assert not hasattr(db, "create_pairing_code")
+    assert not hasattr(db, "consume_pairing_code")
+    assert "/ios" not in legacy_sources["bot"].read_text()
+    with sqlite3.connect(db.DB_FILE) as conn:
+        assert conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+            ("mobile_pairing_codes",),
+        ).fetchone() is None
+    assert "consume_pairing_code" not in legacy_sources["auth"].read_text()
+
+
 def test_telegram_start_returns_fixed_https_login_url(client, monkeypatch):
     verifier = "v" * 43
 

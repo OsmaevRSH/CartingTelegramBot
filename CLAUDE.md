@@ -68,7 +68,7 @@ bot/
 api/
   main.py                      # FastAPI app, startup → init_db(), CORS
   routes/
-    auth.py                    # POST /api/mobile/auth/exchange, /refresh, /logout
+    auth.py                    # Telegram Login start/callback/exchange, refresh, logout
     archive.py                 # GET /api/archive
     races.py                   # GET /api/races?href=, GET /api/races/full?href=
     stats.py                   # GET/POST/DELETE /api/stats/...
@@ -120,7 +120,6 @@ deployment/
 - `/best` — глобальная таблица лучших кругов
 - `/best_today` — таблица лучших за сегодня
 - `/cancel` — отменить текущий диалог `/add` (скрыта из меню)
-- `/ios` — получить одноразовый код привязки iOS-приложения; код действует 10 минут и используется один раз
 
 ## API Endpoints
 
@@ -135,7 +134,10 @@ deployment/
 | GET | /api/leaderboard | Топ всех времён |
 | GET | /api/leaderboard/today?date= | Топ за день |
 | GET | /api/health | Health check |
-| POST | /api/mobile/auth/exchange | Обмен одноразового кода на access/refresh tokens |
+| POST | /api/mobile/auth/telegram/start | Начать Telegram Login с PKCE |
+| GET | /api/mobile/auth/telegram/login | Фиксированная HTTPS-страница Telegram Login |
+| POST | /api/mobile/auth/telegram/callback | Проверить Telegram payload и перенаправить в `carting://auth/callback` |
+| POST | /api/mobile/auth/telegram/exchange | Обмен authorization code + PKCE verifier на access/refresh tokens |
 | POST | /api/mobile/auth/refresh | Ротация refresh session и выдача новой пары токенов |
 | POST | /api/mobile/auth/logout | Отзыв refresh session |
 | GET | /api/mobile/stats | Заезды владельца bearer-токена |
@@ -155,9 +157,10 @@ deployment/
 
 SQLite запущен с `PRAGMA journal_mode=WAL` для корректной работы при конкурентных запросах.
 
-Для mobile-auth `init_db()` также создаёт две таблицы:
+Для Telegram Login `init_db()` также создаёт три таблицы:
 
-- `mobile_pairing_codes(code_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL, consumed_at TEXT)` — одноразовые коды привязки мобильного клиента. В базе хранится только SHA-256 хеш кода; `consume_pairing_code()` проверяет срок, помечает код использованным и возвращает `user_id` в одной SQLite-транзакции.
+- `mobile_telegram_login_transactions` — краткоживущие PKCE-транзакции Telegram Login; в базе хранится SHA-256 хеш `state` и challenge.
+- `mobile_telegram_authorization_codes` — одноразовые authorization code, связанные с завершённой транзакцией; в базе хранится только SHA-256 хеш кода.
 - `mobile_refresh_sessions(token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT)` — refresh-сессии. В базе хранится только SHA-256 хеш токена; `rotate_refresh_session()` атомарно отзывает предшественник и создаёт replacement-токен, а `revoke_refresh_session()` отзывает активную сессию.
 
 Время хранения и статусы используют timezone-aware UTC ISO-8601 timestamps. Генерируемые коды и токены создаются через `secrets.token_urlsafe`; исходные значения никогда не сохраняются.
@@ -166,11 +169,12 @@ SQLite запущен с `PRAGMA journal_mode=WAL` для корректной �
 
 Единственный `.env` файл находится в корне проекта.
 
-- `BOT_TOKEN` — токен Telegram-бота (обязателен)
-- `AUTH_SECRET` — секрет для подписи mobile-auth access tokens
+- `BOT_TOKEN` — секретный токен Telegram-бота, обязательный для проверки Login payload; не хранить в репозитории
+- `TELEGRAM_LOGIN_BOT_USERNAME` — username бота без `@`, настроенного для Telegram Login
+- `TELEGRAM_LOGIN_ORIGIN` — публичный HTTPS origin login-домена без path, query и fragment, например `https://carting.example.com`
+- `AUTH_SECRET` — длинный случайный секрет для подписи mobile-auth access tokens; не хранить в репозитории
 - Access token всегда имеет фиксированный срок `900` секунд (не переопределяется окружением)
 - `REFRESH_TOKEN_TTL_SECONDS` — срок refresh session, по умолчанию `2592000` секунд
-- `PAIRING_CODE_TTL_SECONDS` — срок одноразового pairing-кода, по умолчанию `600` секунд
 - `DATABASE_PATH` — путь к SQLite (по умолчанию `data/races.db`)
 - `LOG_FILE` — путь к лог-файлу
 - `PARSER_TIMEOUT`, `PARSER_MAX_RETRIES` — настройки скрейпинга
@@ -180,7 +184,9 @@ SQLite запущен с `PRAGMA journal_mode=WAL` для корректной �
 Docker переопределяет `DATABASE_PATH` и `LOG_FILE` под пути внутри контейнеров.
 Webapp использует переменную сборки `VITE_API_URL` (см. `webapp/.env.example`).
 
-Нативное iOS-приложение подключается через `/ios`: пользователь вводит полученный код в приложении, а оно обменивает код через `/api/mobile/auth/exchange`. Pairing-код живёт 600 секунд и одноразовый; access token живёт 900 секунд, refresh session — 2592000 секунд. Для production обязательно задать длинный случайный `AUTH_SECRET` и не хранить его в репозитории.
+Нативное iOS-приложение начинает вход через `POST /api/mobile/auth/telegram/start` с S256 PKCE challenge и открывает возвращённый URL на настроенном HTTPS login-домене. Сервер принимает Telegram payload только на фиксированном `POST /api/mobile/auth/telegram/callback`, затем перенаправляет приложение на фиксированный `carting://auth/callback` с короткоживущим authorization code и state. Приложение завершает вход только через `POST /api/mobile/auth/telegram/exchange` с исходным PKCE verifier; произвольные redirect URL не поддерживаются.
+
+В production login-домен и reverse proxy должны быть доступны по HTTPS, а `BOT_TOKEN` и `AUTH_SECRET` — заданы секретами окружения. Не логируйте `state`, authorization code, access token или refresh token; TLS должен завершаться только на доверенном proxy. Перед развёртыванием проверьте username бота и origin, а после смены домена или токена перезапустите сервис.
 
 Проверка mobile API и полного проекта:
 ```bash

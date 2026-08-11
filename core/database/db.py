@@ -11,13 +11,11 @@ from datetime import datetime, timedelta, timezone
 try:
     from core.config.config import (
         DATABASE_PATH,
-        PAIRING_CODE_TTL_SECONDS,
         REFRESH_TOKEN_TTL_SECONDS,
     )
     DB_FILE = Path(DATABASE_PATH)
 except ImportError:
     DB_FILE = Path(__file__).parent.parent.parent / "data" / "races.db"
-    PAIRING_CODE_TTL_SECONDS = 600
     REFRESH_TOKEN_TTL_SECONDS = 2_592_000
 
 
@@ -464,16 +462,6 @@ def consume_telegram_authorization_code_and_create_refresh_session(
             (_token_hash(refresh_token), row[0], refresh_expires_at),
         )
     return row[0], refresh_token
-
-
-def create_pairing_code(user_id: int) -> str:
-    """Legacy temporary shim; pairing-code routes are removed in migration Task 3."""
-    raise RuntimeError("Legacy mobile pairing is unavailable during Telegram Login migration")
-
-
-def consume_pairing_code(code: str) -> Optional[int]:
-    """Legacy temporary shim; pairing-code routes are removed in migration Task 3."""
-    raise RuntimeError("Legacy mobile pairing is unavailable during Telegram Login migration")
 
 
 def create_refresh_session(user_id: int) -> str:

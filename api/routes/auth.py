@@ -24,7 +24,6 @@ from core.config.config import (
 from core.database.db import (
     LOGIN_TRANSACTION_TTL_SECONDS,
     complete_telegram_login_and_issue_authorization_code,
-    consume_pairing_code,
     consume_telegram_authorization_code_and_create_refresh_session,
     create_telegram_login_transaction,
     find_telegram_login_transaction,
@@ -33,10 +32,6 @@ from core.database.db import (
 )
 
 router = APIRouter(prefix="/mobile/auth")
-
-
-class PairingCodeRequest(BaseModel):
-    code: str = Field(min_length=8, max_length=128)
 
 
 class TelegramStartRequest(BaseModel):
@@ -340,17 +335,6 @@ async def exchange_telegram_code(request: TelegramExchangeRequest) -> TokenRespo
         )
     user_id, refresh_token = exchanged
     return _tokens(user_id, refresh_token)
-
-
-@router.post("/exchange", response_model=TokenResponse)
-async def exchange_pairing_code(request: PairingCodeRequest) -> TokenResponse:
-    user_id = consume_pairing_code(request.code)
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Недействительный или истёкший код",
-        )
-    return _tokens(user_id, create_refresh_session(user_id))
 
 
 @router.post("/refresh", response_model=TokenResponse)
