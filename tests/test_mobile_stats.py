@@ -1,10 +1,5 @@
-import asyncio
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
-
 import pytest
 
-from bot.handlers.bot import ios_command
 from core.auth.tokens import issue_access_token
 
 
@@ -118,23 +113,3 @@ def test_legacy_stats_routes_keep_accepting_explicit_user_id(
     assert response.status_code == 200
     assert client.get("/api/stats/42").status_code == 200
     assert client.get("/api/stats/42").json()[0]["num"] == "7"
-
-
-def test_ios_command_sends_pairing_code(monkeypatch):
-    create_pairing_code = Mock(return_value="pairing-code")
-    monkeypatch.setattr("bot.handlers.bot.create_pairing_code", create_pairing_code)
-    message = SimpleNamespace(reply_text=AsyncMock())
-    update = SimpleNamespace(
-        effective_chat=SimpleNamespace(type="private"),
-        effective_user=SimpleNamespace(id=42),
-        effective_message=message,
-    )
-
-    asyncio.run(ios_command(update, SimpleNamespace()))
-
-    create_pairing_code.assert_called_once_with(42)
-    sent_text = message.reply_text.await_args.args[0]
-    assert "Код для iOS" in sent_text
-    assert "<code>pairing-code</code>" in sent_text
-    assert "10 минут" in sent_text
-    assert "только один раз" in sent_text

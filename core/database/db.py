@@ -4,6 +4,8 @@ from typing import Optional, List, Dict, Any
 import json
 import hashlib
 import secrets
+import re
+from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
 
 try:
@@ -26,6 +28,7 @@ def _get_conn():
         DB_FILE.touch(mode=0o666)
     conn = sqlite3.connect(DB_FILE)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -35,6 +38,11 @@ def _utc_now_iso() -> str:
 
 def _token_hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+LOGIN_TRANSACTION_TTL_SECONDS = 10 * 60
+AUTHORIZATION_CODE_TTL_SECONDS = 60
+_S256_CODE_CHALLENGE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
 
 def clear_db():
@@ -126,14 +134,39 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+        conn.execute("DROP TABLE IF EXISTS mobile_pairing_codes")
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS mobile_pairing_codes (
+            CREATE TABLE IF NOT EXISTS mobile_telegram_login_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                state_hash TEXT NOT NULL UNIQUE,
+                code_challenge_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                completed_at TEXT,
+                user_id INTEGER
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mobile_telegram_authorization_codes (
                 code_hash TEXT PRIMARY KEY,
                 user_id INTEGER NOT NULL,
+                transaction_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL,
-                consumed_at TEXT
+                consumed_at TEXT,
+                FOREIGN KEY (transaction_id)
+                    REFERENCES mobile_telegram_login_transactions(id)
+                    ON DELETE CASCADE
             )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS mobile_telegram_authorization_codes_transaction_id
+            ON mobile_telegram_authorization_codes (transaction_id)
             """
         )
         conn.execute(
@@ -158,46 +191,184 @@ def init_db():
             raise RuntimeError("Failed to create database table")
 
 
-def create_pairing_code(user_id: int) -> str:
-    """Create a short-lived one-time mobile pairing code for a Telegram user."""
-    code = secrets.token_urlsafe(24)
-    expires_at = (
-        datetime.now(timezone.utc) + timedelta(seconds=PAIRING_CODE_TTL_SECONDS)
-    ).isoformat()
+def _purge_expired_telegram_auth_records(conn: sqlite3.Connection, now: str) -> None:
+    conn.execute(
+        """
+        DELETE FROM mobile_telegram_authorization_codes
+        WHERE consumed_at IS NOT NULL OR expires_at <= ?
+        """,
+        (now,),
+    )
+    conn.execute(
+        """
+        DELETE FROM mobile_telegram_login_transactions
+        WHERE expires_at <= ?
+        """,
+        (now,),
+    )
+
+
+def _s256_code_challenge(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode()).digest()
+    return urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+
+def create_telegram_login_transaction(
+    state: str, code_challenge: str, code_challenge_method: str
+) -> bool:
+    """Persist a unique, ten-minute Telegram Login transaction."""
+    if code_challenge_method != "S256":
+        raise ValueError("Only S256 PKCE challenges are supported")
+    if not _S256_CODE_CHALLENGE_RE.fullmatch(code_challenge):
+        raise ValueError("Invalid S256 PKCE code challenge")
+
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    expires_at = (now + timedelta(seconds=LOGIN_TRANSACTION_TTL_SECONDS)).isoformat()
     with _get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _purge_expired_telegram_auth_records(conn, now_iso)
+        try:
+            conn.execute(
+                """
+                INSERT INTO mobile_telegram_login_transactions
+                    (state_hash, code_challenge_hash, created_at, expires_at, completed_at, user_id)
+                VALUES (?, ?, ?, ?, NULL, NULL)
+                """,
+                (_token_hash(state), _token_hash(code_challenge), now_iso, expires_at),
+            )
+        except sqlite3.IntegrityError:
+            return False
+    return True
+
+
+def find_telegram_login_transaction(state: str) -> Optional[Dict[str, Any]]:
+    """Find an active Telegram Login transaction without exposing raw artifacts."""
+    now = _utc_now_iso()
+    with _get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _purge_expired_telegram_auth_records(conn, now)
+        row = conn.execute(
+            """
+            SELECT id, user_id, created_at, expires_at, completed_at
+            FROM mobile_telegram_login_transactions
+            WHERE state_hash = ? AND expires_at > ?
+            """,
+            (_token_hash(state), now),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row[0],
+        "user_id": row[1],
+        "created_at": row[2],
+        "expires_at": row[3],
+        "completed_at": row[4],
+    }
+
+
+def complete_telegram_login_transaction(state: str, user_id: int) -> bool:
+    """Atomically bind a Telegram user to an active login transaction once."""
+    now = _utc_now_iso()
+    with _get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _purge_expired_telegram_auth_records(conn, now)
+        cursor = conn.execute(
+            """
+            UPDATE mobile_telegram_login_transactions
+            SET completed_at = ?, user_id = ?
+            WHERE state_hash = ?
+              AND completed_at IS NULL
+              AND expires_at > ?
+            """,
+            (now, user_id, _token_hash(state), now),
+        )
+    return cursor.rowcount == 1
+
+
+def issue_telegram_authorization_code(state: str) -> Optional[str]:
+    """Issue a one-minute authorization code for a completed login transaction."""
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    expires_at = (now + timedelta(seconds=AUTHORIZATION_CODE_TTL_SECONDS)).isoformat()
+    with _get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _purge_expired_telegram_auth_records(conn, now_iso)
+        transaction = conn.execute(
+            """
+            SELECT id, user_id
+            FROM mobile_telegram_login_transactions
+            WHERE state_hash = ?
+              AND completed_at IS NOT NULL
+              AND expires_at > ?
+            """,
+            (_token_hash(state), now_iso),
+        ).fetchone()
+        if transaction is None:
+            return None
+
+        code = secrets.token_urlsafe(32)
         conn.execute(
             """
-            INSERT INTO mobile_pairing_codes (code_hash, user_id, expires_at, consumed_at)
-            VALUES (?, ?, ?, NULL)
+            INSERT INTO mobile_telegram_authorization_codes
+                (code_hash, user_id, transaction_id, created_at, expires_at, consumed_at)
+            VALUES (?, ?, ?, ?, ?, NULL)
             """,
-            (_token_hash(code), user_id, expires_at),
+            (_token_hash(code), transaction[1], transaction[0], now_iso, expires_at),
         )
     return code
 
 
-def consume_pairing_code(code: str) -> Optional[int]:
-    """Consume a valid pairing code once and return its user ID."""
+def consume_telegram_authorization_code(
+    code: str, state: str, code_verifier: str
+) -> Optional[int]:
+    """Consume one valid authorization code bound to state and an S256 verifier."""
     now = _utc_now_iso()
+    code_hash = _token_hash(code)
+    state_hash = _token_hash(state)
+    challenge_hash = _token_hash(_s256_code_challenge(code_verifier))
     with _get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
+        _purge_expired_telegram_auth_records(conn, now)
         row = conn.execute(
             """
-            SELECT user_id FROM mobile_pairing_codes
-            WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?
+            SELECT code.user_id
+            FROM mobile_telegram_authorization_codes AS code
+            JOIN mobile_telegram_login_transactions AS login_transaction
+                ON login_transaction.id = code.transaction_id
+            WHERE code.code_hash = ?
+              AND code.consumed_at IS NULL
+              AND code.expires_at > ?
+              AND login_transaction.state_hash = ?
+              AND login_transaction.code_challenge_hash = ?
+              AND login_transaction.completed_at IS NOT NULL
+              AND login_transaction.expires_at > ?
             """,
-            (_token_hash(code), now),
+            (code_hash, now, state_hash, challenge_hash, now),
         ).fetchone()
         if row is None:
             return None
-        conn.execute(
+        cursor = conn.execute(
             """
-            UPDATE mobile_pairing_codes
+            UPDATE mobile_telegram_authorization_codes
             SET consumed_at = ?
-            WHERE code_hash = ? AND consumed_at IS NULL
+            WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?
             """,
-            (now, _token_hash(code)),
+            (now, code_hash, now),
         )
-        return row[0]
+        if cursor.rowcount != 1:
+            return None
+    return row[0]
+
+
+def create_pairing_code(user_id: int) -> str:
+    """Legacy temporary shim; pairing-code routes are removed in migration Task 3."""
+    raise RuntimeError("Legacy mobile pairing is unavailable during Telegram Login migration")
+
+
+def consume_pairing_code(code: str) -> Optional[int]:
+    """Legacy temporary shim; pairing-code routes are removed in migration Task 3."""
+    raise RuntimeError("Legacy mobile pairing is unavailable during Telegram Login migration")
 
 
 def create_refresh_session(user_id: int) -> str:
