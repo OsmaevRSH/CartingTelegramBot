@@ -57,6 +57,23 @@ def test_login_transaction_rejects_duplicate_state(pairing_db):
     assert find_telegram_login_transaction(state) is not None
 
 
+def test_login_transaction_uses_exact_ten_minute_ttl(pairing_db):
+    state = "login-state"
+
+    assert create_telegram_login_transaction(state, _s256_challenge("v" * 43), "S256")
+    with sqlite3.connect(pairing_db) as conn:
+        created_at, expires_at = conn.execute(
+            """
+            SELECT created_at, expires_at
+            FROM mobile_telegram_login_transactions
+            WHERE state_hash = ?
+            """,
+            (hashlib.sha256(state.encode()).hexdigest(),),
+        ).fetchone()
+
+    assert datetime.fromisoformat(expires_at) - datetime.fromisoformat(created_at) == timedelta(minutes=10)
+
+
 @pytest.mark.parametrize(
     ("challenge", "method"),
     [
@@ -142,6 +159,49 @@ def test_authorization_code_expires_after_sixty_seconds(pairing_db):
         )
 
     assert consume_telegram_authorization_code(code, state, verifier) is None
+
+
+def test_authorization_code_uses_exact_sixty_second_ttl(pairing_db):
+    state = "login-state"
+    verifier = "v" * 43
+    _create_completed_transaction(state, verifier)
+    code = issue_telegram_authorization_code(state)
+    assert code is not None
+
+    with sqlite3.connect(pairing_db) as conn:
+        created_at, expires_at = conn.execute(
+            """
+            SELECT created_at, expires_at
+            FROM mobile_telegram_authorization_codes
+            WHERE code_hash = ?
+            """,
+            (hashlib.sha256(code.encode()).hexdigest(),),
+        ).fetchone()
+
+    assert datetime.fromisoformat(expires_at) - datetime.fromisoformat(created_at) == timedelta(seconds=60)
+
+
+def test_authorization_code_remains_valid_after_its_transaction_expires(pairing_db):
+    state = "login-state"
+    verifier = "v" * 43
+    _create_completed_transaction(state, verifier)
+    code = issue_telegram_authorization_code(state)
+    assert code is not None
+
+    with sqlite3.connect(pairing_db) as conn:
+        conn.execute(
+            """
+            UPDATE mobile_telegram_login_transactions
+            SET expires_at = ?
+            WHERE state_hash = ?
+            """,
+            (
+                (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+                hashlib.sha256(state.encode()).hexdigest(),
+            ),
+        )
+
+    assert consume_telegram_authorization_code(code, state, verifier) == 42
 
 
 def test_authorization_code_can_be_consumed_once(pairing_db):

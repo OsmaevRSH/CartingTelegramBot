@@ -203,8 +203,15 @@ def _purge_expired_telegram_auth_records(conn: sqlite3.Connection, now: str) -> 
         """
         DELETE FROM mobile_telegram_login_transactions
         WHERE expires_at <= ?
+          AND NOT EXISTS (
+              SELECT 1
+              FROM mobile_telegram_authorization_codes
+              WHERE transaction_id = mobile_telegram_login_transactions.id
+                AND consumed_at IS NULL
+                AND expires_at > ?
+          )
         """,
-        (now,),
+        (now, now),
     )
 
 
@@ -342,9 +349,8 @@ def consume_telegram_authorization_code(
               AND login_transaction.state_hash = ?
               AND login_transaction.code_challenge_hash = ?
               AND login_transaction.completed_at IS NOT NULL
-              AND login_transaction.expires_at > ?
             """,
-            (code_hash, now, state_hash, challenge_hash, now),
+            (code_hash, now, state_hash, challenge_hash),
         ).fetchone()
         if row is None:
             return None
