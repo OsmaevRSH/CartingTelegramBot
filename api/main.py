@@ -19,6 +19,7 @@ from core.database.db import init_db
 from api.routes import archive, auth, races, stats, leaderboard
 
 _TELEGRAM_LOGIN_PATH = "/api/mobile/auth/telegram/login"
+_TELEGRAM_LOGIN_PATHS = (_TELEGRAM_LOGIN_PATH, f"{_TELEGRAM_LOGIN_PATH}/")
 _TELEGRAM_LOGIN_STATE_SCOPE_KEY = "carting.telegram_login_state"
 
 
@@ -37,7 +38,7 @@ class RedactTelegramLoginStateMiddleware:
         if (
             scope["type"] == "http"
             and scope["method"] == "GET"
-            and scope["path"] == _TELEGRAM_LOGIN_PATH
+            and scope["path"] in _TELEGRAM_LOGIN_PATHS
         ):
             raw_query = scope.get("query_string", b"")
             scope["query_string"] = b""

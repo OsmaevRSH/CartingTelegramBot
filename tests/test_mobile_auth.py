@@ -190,8 +190,15 @@ def test_telegram_login_page_is_available_only_for_live_state(client, monkeypatc
     assert "unknown-state" not in rejected.text
 
 
+@pytest.mark.parametrize(
+    ("path", "expected_status"),
+    [
+        ("/api/mobile/auth/telegram/login", 200),
+        ("/api/mobile/auth/telegram/login/", 307),
+    ],
+)
 def test_telegram_login_state_is_redacted_before_uvicorn_access_logging(
-    client, monkeypatch
+    client, monkeypatch, path, expected_status
 ):
     monkeypatch.setattr(auth_routes, "TELEGRAM_LOGIN_BOT_USERNAME", "CartingTestBot")
     started = _start_telegram_login(client, monkeypatch)
@@ -211,7 +218,7 @@ def test_telegram_login_state_is_redacted_before_uvicorn_access_logging(
     scope = {
         "type": "http",
         "method": "GET",
-        "path": "/api/mobile/auth/telegram/login",
+        "path": path,
         "query_string": f"state={started['state']}".encode(),
         "headers": [],
     }
@@ -227,8 +234,10 @@ def test_telegram_login_state_is_redacted_before_uvicorn_access_logging(
     assert started["state"].encode() not in captured_scope["query_string"]
     assert captured_scope["query_string"] == b""
     assert client.get(
-        "/api/mobile/auth/telegram/login", params={"state": started["state"]}
-    ).status_code == 200
+        path,
+        params={"state": started["state"]},
+        follow_redirects=False,
+    ).status_code == expected_status
 
 
 def test_reverse_proxies_skip_telegram_login_access_logs():
@@ -237,8 +246,14 @@ def test_reverse_proxies_skip_telegram_login_access_logs():
     caddyfile = (root / "deployment" / "Caddyfile").read_text()
     nginx_config = (root / "deployment" / "webapp" / "nginx.conf").read_text()
 
+    assert "\n    log\n" not in caddyfile
+    assert (
+        "@telegram_login path /api/mobile/auth/telegram/login "
+        "/api/mobile/auth/telegram/login/"
+    ) in caddyfile
     assert "log_skip @telegram_login" in caddyfile
     assert "location = /api/mobile/auth/telegram/login" in nginx_config
+    assert "location = /api/mobile/auth/telegram/login/" in nginx_config
     assert "access_log off;" in nginx_config
 
 
