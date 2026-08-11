@@ -213,7 +213,7 @@ PY
         return 1
     fi
 
-    if ! $DC exec -T carting-api python -c 'from urllib.request import urlopen; assert urlopen("http://127.0.0.1:8000/health", timeout=10).status == 200'; then
+    if ! $DC exec -T carting-api python -c 'from urllib.request import urlopen; assert urlopen("http://127.0.0.1:8000/api/health", timeout=10).status == 200'; then
         colored_echo "❌ API не прошёл проверку здоровья. Бэкап сохранён: ../$backup_file" $RED
         cd ..
         return 1

@@ -82,3 +82,9 @@ def test_full_update_accepts_a_root_owned_xray_secret_for_container_validation()
 
     assert '[ ! -f "secrets/xray-telegram.json" ]' in body
     assert '[ ! -r "secrets/xray-telegram.json" ]' not in body
+
+
+def test_full_update_checks_the_actual_api_health_route_after_recreation():
+    body = _full_update_body()
+
+    assert "http://127.0.0.1:8000/api/health" in body
