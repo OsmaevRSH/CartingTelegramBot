@@ -6,11 +6,13 @@ import sqlite3
 from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import jwt
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -53,6 +55,120 @@ def _s256_challenge(verifier: str) -> str:
 def _create_completed_transaction(state: str, verifier: str, user_id: int = 42) -> None:
     assert create_telegram_login_transaction(state, _s256_challenge(verifier), "S256")
     assert complete_telegram_login_transaction(state, user_id)
+
+
+@pytest.fixture
+def telegram_jwks(monkeypatch):
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    class LocalJwkClient:
+        def get_signing_key_from_jwt(self, _id_token):
+            return SimpleNamespace(key=private_key.public_key())
+
+    monkeypatch.setattr(
+        auth_tokens,
+        "get_telegram_jwk_client",
+        lambda: LocalJwkClient(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auth_tokens,
+        "TELEGRAM_LOGIN_CLIENT_ID",
+        "7525532588",
+        raising=False,
+    )
+    return SimpleNamespace(private_key=private_key)
+
+
+def sign_telegram_id_token(
+    private_key, *, sub: str, aud: str, **profile_claims: str
+) -> str:
+    now = datetime.now(timezone.utc)
+    return jwt.encode(
+        {
+            "id": sub,
+            "sub": sub,
+            "aud": aud,
+            "iss": "https://oauth.telegram.org",
+            "exp": now + timedelta(minutes=5),
+            **profile_claims,
+        },
+        private_key,
+        algorithm="RS256",
+        headers={"kid": "test-key"},
+    )
+
+
+def test_native_exchange_accepts_telegram_jwt_and_returns_carting_tokens(
+    client, telegram_jwks
+):
+    token = sign_telegram_id_token(
+        telegram_jwks.private_key, sub="42", aud="7525532588"
+    )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["expires_in"] == 900
+
+
+def test_native_exchange_rejects_wrong_signature_or_audience(client, telegram_jwks):
+    response = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": "invalid"}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+def test_native_exchange_rejects_wrong_audience(client, telegram_jwks):
+    token = sign_telegram_id_token(
+        telegram_jwks.private_key, sub="42", aud="other-client"
+    )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+def test_native_exchange_rolls_back_profile_when_refresh_session_creation_fails(
+    client, telegram_jwks, pairing_db
+):
+    token = sign_telegram_id_token(
+        telegram_jwks.private_key,
+        sub="42",
+        aud="7525532588",
+        first_name="Alice",
+    )
+    with sqlite3.connect(pairing_db) as conn:
+        conn.execute(
+            """
+            CREATE TRIGGER fail_native_refresh_session_creation
+            BEFORE INSERT ON mobile_refresh_sessions
+            BEGIN
+                SELECT RAISE(ABORT, 'forced refresh failure');
+            END
+            """
+        )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Не удалось завершить вход"}
+    with sqlite3.connect(pairing_db) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM user_profiles WHERE user_id = 42"
+        ).fetchone() == (0,)
+        assert conn.execute(
+            "SELECT COUNT(*) FROM mobile_refresh_sessions WHERE user_id = 42"
+        ).fetchone() == (0,)
 
 
 def _telegram_payload(

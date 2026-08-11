@@ -481,6 +481,32 @@ def create_refresh_session(user_id: int) -> str:
     return token
 
 
+def provision_telegram_identity_and_create_refresh_session(
+    user_id: int,
+    telegram_name: Optional[str] = None,
+    telegram_username: Optional[str] = None,
+    photo_url: Optional[str] = None,
+) -> str:
+    """Atomically store a Telegram profile update and create a refresh session."""
+    refresh_token = secrets.token_urlsafe(48)
+    refresh_expires_at = (
+        datetime.now(timezone.utc) + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS)
+    ).isoformat()
+    with _get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _upsert_user_profile(
+            conn, user_id, telegram_name, telegram_username, photo_url
+        )
+        conn.execute(
+            """
+            INSERT INTO mobile_refresh_sessions (token_hash, user_id, expires_at, revoked_at)
+            VALUES (?, ?, ?, NULL)
+            """,
+            (_token_hash(refresh_token), user_id, refresh_expires_at),
+        )
+    return refresh_token
+
+
 def rotate_refresh_session(token: str) -> Optional[tuple[int, str]]:
     """Revoke a valid refresh token and return its user ID with a replacement token."""
     now = _utc_now_iso()

@@ -3,17 +3,124 @@
 import hashlib
 import hmac
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from threading import RLock
 from typing import Mapping, Optional
 
 import jwt
+from jwt import PyJWKClient
 
-from core.config.config import AUTH_SECRET
+from core.config.config import (
+    AUTH_SECRET,
+    TELEGRAM_LOGIN_CLIENT_ID,
+    TELEGRAM_LOGIN_JWKS_TIMEOUT_SECONDS,
+    TELEGRAM_LOGIN_JWKS_URL,
+)
 
 ACCESS_TOKEN_LIFETIME_SECONDS = 900
 TELEGRAM_AUTH_MAX_AGE_SECONDS = 10 * 60
 TELEGRAM_AUTH_FUTURE_TOLERANCE_SECONDS = 60
 _TELEGRAM_HASH_RE = re.compile(r"^[0-9A-Fa-f]{64}$")
+_TELEGRAM_ISSUER = "https://oauth.telegram.org"
+_TELEGRAM_JWKS_CACHE_SECONDS = 300
+_TELEGRAM_JWKS_MAX_KEYS = 16
+_TELEGRAM_PROFILE_FIELD_MAX_LENGTH = 256
+_TELEGRAM_JWK_CLIENT_LOCK = RLock()
+_telegram_jwk_client: Optional[PyJWKClient] = None
+
+
+@dataclass(frozen=True)
+class TelegramIdentity:
+    """Validated Telegram identity, without the source ID token."""
+
+    user_id: int
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    username: Optional[str] = None
+    photo_url: Optional[str] = None
+
+    @property
+    def telegram_name(self) -> Optional[str]:
+        name = " ".join(
+            part for part in (self.first_name, self.last_name) if part
+        )
+        return name or None
+
+
+def get_telegram_jwk_client() -> PyJWKClient:
+    """Return a bounded cached Telegram JWKS client."""
+    global _telegram_jwk_client
+    with _TELEGRAM_JWK_CLIENT_LOCK:
+        if _telegram_jwk_client is None:
+            _telegram_jwk_client = PyJWKClient(
+                TELEGRAM_LOGIN_JWKS_URL,
+                cache_keys=True,
+                max_cached_keys=_TELEGRAM_JWKS_MAX_KEYS,
+                cache_jwk_set=True,
+                lifespan=_TELEGRAM_JWKS_CACHE_SECONDS,
+                timeout=TELEGRAM_LOGIN_JWKS_TIMEOUT_SECONDS,
+            )
+        return _telegram_jwk_client
+
+
+def _safe_profile_claim(claims: Mapping[str, object], key: str) -> Optional[str]:
+    value = claims.get(key)
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value or len(value) > _TELEGRAM_PROFILE_FIELD_MAX_LENGTH:
+        return None
+    return value
+
+
+def _telegram_user_id(claims: Mapping[str, object]) -> int:
+    value = claims.get("id")
+    if isinstance(value, bool):
+        raise ValueError("Invalid Telegram user ID")
+    if isinstance(value, int):
+        user_id = value
+    elif isinstance(value, str) and value.isascii() and value.isdecimal():
+        user_id = int(value)
+    else:
+        raise ValueError("Invalid Telegram user ID")
+    if user_id <= 0 or user_id > 2**63 - 1:
+        raise ValueError("Invalid Telegram user ID")
+    if claims.get("sub") != str(user_id):
+        raise ValueError("Telegram subject does not match ID")
+    return user_id
+
+
+def validate_telegram_id_token(id_token: str) -> TelegramIdentity:
+    """Validate a Telegram native ID token and return only safe identity data."""
+    if (
+        not TELEGRAM_LOGIN_CLIENT_ID
+        or not isinstance(id_token, str)
+        or not id_token
+        or len(id_token) > 16 * 1024
+    ):
+        raise ValueError("Invalid Telegram ID token")
+    try:
+        with _TELEGRAM_JWK_CLIENT_LOCK:
+            signing_key = get_telegram_jwk_client().get_signing_key_from_jwt(id_token)
+            claims = jwt.decode(
+                id_token,
+                signing_key.key,
+                algorithms=["RS256"],
+                audience=TELEGRAM_LOGIN_CLIENT_ID,
+                issuer=_TELEGRAM_ISSUER,
+                options={"require": ["exp", "iss", "aud", "sub"]},
+            )
+        user_id = _telegram_user_id(claims)
+    except (jwt.PyJWTError, KeyError, TypeError, ValueError, OSError) as exc:
+        raise ValueError("Invalid Telegram ID token") from exc
+    return TelegramIdentity(
+        user_id=user_id,
+        first_name=_safe_profile_claim(claims, "first_name"),
+        last_name=_safe_profile_claim(claims, "last_name"),
+        username=_safe_profile_claim(claims, "username"),
+        photo_url=_safe_profile_claim(claims, "photo_url"),
+    )
 
 
 def validate_telegram_login_payload(

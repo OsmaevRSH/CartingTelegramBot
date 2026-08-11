@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.auth.tokens import (
     ACCESS_TOKEN_LIFETIME_SECONDS,
     issue_access_token,
+    validate_telegram_id_token,
     validate_telegram_login_payload,
 )
 from core.config.config import (
@@ -27,6 +28,7 @@ from core.database.db import (
     consume_telegram_authorization_code_and_create_refresh_session,
     create_telegram_login_transaction,
     find_telegram_login_transaction,
+    provision_telegram_identity_and_create_refresh_session,
     revoke_refresh_session,
     rotate_refresh_session,
 )
@@ -53,6 +55,12 @@ class TelegramExchangeRequest(BaseModel):
     code: str
     state: str
     code_verifier: str
+
+
+class TelegramNativeExchangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id_token: str
 
 
 class RefreshTokenRequest(BaseModel):
@@ -335,6 +343,29 @@ async def exchange_telegram_code(request: TelegramExchangeRequest) -> TokenRespo
         )
     user_id, refresh_token = exchanged
     return _tokens(user_id, refresh_token)
+
+
+@router.post("/telegram/native/exchange", response_model=TokenResponse)
+async def exchange_telegram_native_id_token(
+    request: TelegramNativeExchangeRequest,
+) -> TokenResponse:
+    try:
+        identity = validate_telegram_id_token(request.id_token)
+    except ValueError:
+        raise _callback_rejected()
+    try:
+        refresh_token = provision_telegram_identity_and_create_refresh_session(
+            identity.user_id,
+            identity.telegram_name,
+            identity.username,
+            identity.photo_url,
+        )
+    except sqlite3.Error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Не удалось завершить вход",
+        )
+    return _tokens(identity.user_id, refresh_token)
 
 
 @router.post("/refresh", response_model=TokenResponse)
