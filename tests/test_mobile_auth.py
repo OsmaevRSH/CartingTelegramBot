@@ -1,8 +1,12 @@
 import hashlib
+import hmac
 import asyncio
+import re
 import sqlite3
 from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
+from typing import Optional
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import jwt
@@ -11,6 +15,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 import core.database.db as db
 import api.main as api_main
+import api.routes.auth as auth_routes
 import core.auth.tokens as auth_tokens
 from api.dependencies import require_mobile_user
 from core.auth.tokens import decode_access_token, issue_access_token
@@ -24,6 +29,7 @@ from core.database.db import (
     issue_telegram_authorization_code,
     revoke_refresh_session,
     rotate_refresh_session,
+    upsert_user_profile,
 )
 
 
@@ -46,6 +52,351 @@ def _s256_challenge(verifier: str) -> str:
 def _create_completed_transaction(state: str, verifier: str, user_id: int = 42) -> None:
     assert create_telegram_login_transaction(state, _s256_challenge(verifier), "S256")
     assert complete_telegram_login_transaction(state, user_id)
+
+
+def _telegram_payload(
+    bot_token: str,
+    *,
+    user_id: str = "42",
+    auth_date: Optional[int] = None,
+    **fields: str,
+) -> dict[str, str]:
+    payload = {
+        "id": user_id,
+        "first_name": "Alice",
+        "auth_date": str(
+            auth_date
+            if auth_date is not None
+            else int(datetime.now(timezone.utc).timestamp())
+        ),
+        **fields,
+    }
+    data_check_string = "\n".join(
+        f"{key}={value}" for key, value in sorted(payload.items())
+    )
+    secret = hashlib.sha256(bot_token.encode()).digest()
+    payload["hash"] = hmac.new(
+        secret, data_check_string.encode(), hashlib.sha256
+    ).hexdigest()
+    return payload
+
+
+def _start_telegram_login(client, monkeypatch, verifier: str = "v" * 43):
+    monkeypatch.setattr(
+        auth_routes, "TELEGRAM_LOGIN_ORIGIN", "https://carting.example"
+    )
+    response = client.post(
+        "/api/mobile/auth/telegram/start",
+        json={
+            "code_challenge": _s256_challenge(verifier),
+            "code_challenge_method": "S256",
+        },
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+def _callback_location(
+    client,
+    monkeypatch,
+    *,
+    state: str,
+    payload: dict[str, str],
+    bot_token: str = "123456:test-token",
+) -> str:
+    monkeypatch.setattr(auth_routes, "BOT_TOKEN", bot_token)
+    response = client.post(
+        "/api/mobile/auth/telegram/callback",
+        data={"state": state, **payload},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    return response.headers["location"]
+
+
+def test_telegram_start_returns_fixed_https_login_url(client, monkeypatch):
+    verifier = "v" * 43
+
+    body = _start_telegram_login(client, monkeypatch, verifier)
+
+    assert body["expires_in"] == 600
+    assert re.fullmatch(r"[A-Za-z0-9_-]{43}", body["state"])
+    assert body["authorization_url"] == (
+        "https://carting.example/api/mobile/auth/telegram/login?state="
+        + body["state"]
+    )
+    assert verifier not in body["authorization_url"]
+    assert find_telegram_login_transaction(body["state"]) is not None
+
+
+@pytest.mark.parametrize(
+    ("challenge", "method"),
+    [
+        ("invalid", "S256"),
+        (_s256_challenge("v" * 43), "plain"),
+    ],
+)
+def test_telegram_start_rejects_invalid_pkce(client, monkeypatch, challenge, method):
+    monkeypatch.setattr(
+        auth_routes, "TELEGRAM_LOGIN_ORIGIN", "https://carting.example"
+    )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/start",
+        json={"code_challenge": challenge, "code_challenge_method": method},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Недействительный запрос входа"}
+
+
+def test_telegram_start_does_not_accept_redirect_url(client, monkeypatch):
+    monkeypatch.setattr(
+        auth_routes, "TELEGRAM_LOGIN_ORIGIN", "https://carting.example"
+    )
+
+    response = client.post(
+        "/api/mobile/auth/telegram/start",
+        json={
+            "code_challenge": _s256_challenge("v" * 43),
+            "code_challenge_method": "S256",
+            "redirect_url": "https://attacker.example/callback",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_telegram_login_page_is_available_only_for_live_state(client, monkeypatch):
+    monkeypatch.setattr(auth_routes, "TELEGRAM_LOGIN_BOT_USERNAME", "CartingTestBot")
+    started = _start_telegram_login(client, monkeypatch)
+
+    response = client.get(
+        "/api/mobile/auth/telegram/login", params={"state": started["state"]}
+    )
+
+    assert response.status_code == 200
+    assert "https://telegram.org/js/telegram-widget.js" in response.text
+    assert 'data-telegram-login="CartingTestBot"' in response.text
+    assert 'action="/api/mobile/auth/telegram/callback"' not in response.text
+    assert started["state"] not in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+    rejected = client.get(
+        "/api/mobile/auth/telegram/login", params={"state": "unknown-state"}
+    )
+    assert rejected.status_code == 401
+    assert "unknown-state" not in rejected.text
+
+
+def test_telegram_callback_provisions_profile_and_redirects_with_opaque_code(
+    client, monkeypatch, pairing_db
+):
+    bot_token = "123456:test-token"
+    started = _start_telegram_login(client, monkeypatch)
+    payload = _telegram_payload(
+        bot_token,
+        user_id="4242",
+        first_name="Alice",
+        last_name="Smith",
+        username="alice",
+        photo_url="https://example.test/alice.jpg",
+    )
+
+    location = _callback_location(
+        client,
+        monkeypatch,
+        state=started["state"],
+        payload=payload,
+        bot_token=bot_token,
+    )
+
+    redirect = urlsplit(location)
+    query = parse_qs(redirect.query)
+    assert (redirect.scheme, redirect.netloc, redirect.path) == (
+        "carting",
+        "auth",
+        "/callback",
+    )
+    assert query["state"] == [started["state"]]
+    assert re.fullmatch(r"[A-Za-z0-9_-]{43}", query["code"][0])
+    assert "access_token" not in location
+    assert "refresh_token" not in location
+    with sqlite3.connect(pairing_db) as conn:
+        assert conn.execute(
+            """
+            SELECT telegram_name, telegram_username, photo_url
+            FROM user_profiles WHERE user_id = 4242
+            """
+        ).fetchone() == ("Alice Smith", "alice", "https://example.test/alice.jpg")
+
+
+@pytest.mark.parametrize("mutation", ["altered", "missing"])
+def test_telegram_callback_rejects_altered_or_missing_hash(
+    client, monkeypatch, mutation
+):
+    bot_token = "123456:test-token"
+    started = _start_telegram_login(client, monkeypatch)
+    payload = _telegram_payload(bot_token)
+    if mutation == "altered":
+        payload["first_name"] = "Mallory"
+    else:
+        payload.pop("hash")
+    monkeypatch.setattr(auth_routes, "BOT_TOKEN", bot_token)
+
+    response = client.post(
+        "/api/mobile/auth/telegram/callback",
+        data={"state": started["state"], **payload},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+@pytest.mark.parametrize("telegram_id", ["not-a-number", "", "-42", "0"])
+def test_telegram_callback_rejects_malformed_telegram_id(
+    client, monkeypatch, telegram_id
+):
+    bot_token = "123456:test-token"
+    started = _start_telegram_login(client, monkeypatch)
+    payload = _telegram_payload(bot_token, user_id=telegram_id)
+    monkeypatch.setattr(auth_routes, "BOT_TOKEN", bot_token)
+
+    response = client.post(
+        "/api/mobile/auth/telegram/callback",
+        data={"state": started["state"], **payload},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("offset_seconds", [-601, 61])
+def test_telegram_callback_rejects_stale_or_far_future_auth_date(
+    client, monkeypatch, offset_seconds
+):
+    bot_token = "123456:test-token"
+    started = _start_telegram_login(client, monkeypatch)
+    auth_date = int(datetime.now(timezone.utc).timestamp()) + offset_seconds
+    payload = _telegram_payload(bot_token, auth_date=auth_date)
+    monkeypatch.setattr(auth_routes, "BOT_TOKEN", bot_token)
+
+    response = client.post(
+        "/api/mobile/auth/telegram/callback",
+        data={"state": started["state"], **payload},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 401
+
+
+def test_telegram_callback_requires_live_transaction_before_accepting_payload(
+    client, monkeypatch
+):
+    bot_token = "123456:test-token"
+    monkeypatch.setattr(auth_routes, "BOT_TOKEN", bot_token)
+
+    response = client.post(
+        "/api/mobile/auth/telegram/callback",
+        data={"state": "unknown-state", **_telegram_payload(bot_token)},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Не удалось подтвердить вход"}
+
+
+def test_telegram_callback_missing_optional_fields_preserves_existing_profile(
+    client, monkeypatch, pairing_db
+):
+    upsert_user_profile(42, "Stored Name", "stored_user", "https://stored/photo")
+    bot_token = "123456:test-token"
+    started = _start_telegram_login(client, monkeypatch)
+    payload = _telegram_payload(
+        bot_token,
+        user_id="42",
+        first_name="Updated",
+        username="",
+        photo_url="",
+    )
+
+    _callback_location(
+        client,
+        monkeypatch,
+        state=started["state"],
+        payload=payload,
+        bot_token=bot_token,
+    )
+
+    with sqlite3.connect(pairing_db) as conn:
+        assert conn.execute(
+            """
+            SELECT telegram_name, telegram_username, photo_url
+            FROM user_profiles WHERE user_id = 42
+            """
+        ).fetchone() == ("Updated", "stored_user", "https://stored/photo")
+
+
+def test_telegram_exchange_returns_tokens_once_for_matching_state_and_verifier(
+    client, monkeypatch
+):
+    verifier = "v" * 43
+    bot_token = "123456:test-token"
+    started = _start_telegram_login(client, monkeypatch, verifier)
+    location = _callback_location(
+        client,
+        monkeypatch,
+        state=started["state"],
+        payload=_telegram_payload(bot_token),
+        bot_token=bot_token,
+    )
+    code = parse_qs(urlsplit(location).query)["code"][0]
+    request = {"code": code, "state": started["state"], "code_verifier": verifier}
+
+    response = client.post("/api/mobile/auth/telegram/exchange", json=request)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["token_type"] == "bearer"
+    assert body["expires_in"] == 900
+    assert decode_access_token(body["access_token"]) == 42
+    assert len(body["refresh_token"]) >= 24
+    assert client.post(
+        "/api/mobile/auth/telegram/exchange", json=request
+    ).status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("state", "verifier"),
+    [("other-state", "v" * 43), (None, "x" * 43)],
+)
+def test_telegram_exchange_rejects_state_or_verifier_mismatch(
+    client, monkeypatch, state, verifier
+):
+    original_verifier = "v" * 43
+    bot_token = "123456:test-token"
+    started = _start_telegram_login(client, monkeypatch, original_verifier)
+    location = _callback_location(
+        client,
+        monkeypatch,
+        state=started["state"],
+        payload=_telegram_payload(bot_token),
+        bot_token=bot_token,
+    )
+    code = parse_qs(urlsplit(location).query)["code"][0]
+
+    response = client.post(
+        "/api/mobile/auth/telegram/exchange",
+        json={
+            "code": code,
+            "state": state or started["state"],
+            "code_verifier": verifier,
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Недействительный или истёкший вход"}
 
 
 def test_login_transaction_rejects_duplicate_state(pairing_db):
