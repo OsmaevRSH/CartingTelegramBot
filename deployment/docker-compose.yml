@@ -10,11 +10,18 @@ services:
     environment:
       - DATABASE_PATH=/app/data/races.db
       - LOG_FILE=/app/logs/bot.log
+      - HTTPS_PROXY=http://carting-xray:10809
+      - HTTP_PROXY=http://carting-xray:10809
+      - NO_PROXY=localhost,127.0.0.1,carting-api,carting-bot,carting-webapp,carting-caddy,carting-xray
     volumes:
       - ../data:/app/data:rw
       - ../logs:/app/logs:rw
     networks:
       - carting-network
+      - telegram-proxy
+    depends_on:
+      carting-xray:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "bot/utils/health_check.py"]
       interval: 30s
@@ -40,11 +47,18 @@ services:
       - LOG_FILE=/app/logs/api.log
       - API_HOST=0.0.0.0
       - API_PORT=8000
+      - HTTPS_PROXY=http://carting-xray:10809
+      - HTTP_PROXY=http://carting-xray:10809
+      - NO_PROXY=localhost,127.0.0.1,carting-api,carting-bot,carting-webapp,carting-caddy,carting-xray
     volumes:
       - ../data:/app/data:rw
       - ../logs:/app/logs:rw
     networks:
       - carting-network
+      - telegram-proxy
+    depends_on:
+      carting-xray:
+        condition: service_healthy
     logging:
       driver: "json-file"
       options:
@@ -61,6 +75,31 @@ services:
       - carting-api
     networks:
       - carting-network
+
+  carting-xray:
+    image: ghcr.io/xtls/xray-core:26.3.27
+    container_name: carting-xray
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ../secrets/xray-telegram.json:/etc/xray/config.json:ro
+    command: ["run", "-c", "/etc/xray/config.json"]
+    networks:
+      - telegram-proxy
+      - xray-egress
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/xray", "run", "-test", "-c", "/etc/xray/config.json"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   carting-caddy:
     image: caddy:2-alpine
@@ -80,6 +119,10 @@ services:
 
 networks:
   carting-network:
+    driver: bridge
+  telegram-proxy:
+    internal: true
+  xray-egress:
     driver: bridge
 
 volumes:

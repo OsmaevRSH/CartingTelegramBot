@@ -107,7 +107,11 @@ function show_logs_follow() {
 function update_bot() {
     colored_echo "🔄 Обновляю и перезапускаю бота..." $BLUE
     cd deployment
-    $DC down
+    if [ ! -f ../secrets/xray-telegram.json ]; then
+        colored_echo "❌ Не найден секретный конфиг Xray: ../secrets/xray-telegram.json" $RED
+        cd ..
+        return 1
+    fi
     $DC up -d --build
     if [ $? -eq 0 ]; then
         colored_echo "✅ Бот обновлен и перезапущен!" $GREEN
