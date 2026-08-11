@@ -232,7 +232,9 @@ def test_native_exchange_throttles_unknown_jwk_id_fetches(
     class UnknownKidJwkClient:
         def get_signing_key_from_jwt(self, _id_token):
             attempts.append(1)
-            raise jwt.PyJWKClientError("Unknown key")
+            raise jwt.PyJWKClientError(
+                "Unable to find a signing key that matches: unknown-test-key"
+            )
 
     monkeypatch.setattr(
         auth_tokens, "get_telegram_jwk_client", lambda: UnknownKidJwkClient()
@@ -252,6 +254,42 @@ def test_native_exchange_throttles_unknown_jwk_id_fetches(
         assert response.json() == {"detail": "Не удалось подтвердить вход"}
 
     assert attempts == [1]
+
+
+def test_native_exchange_retries_valid_kid_after_jwks_connection_failure(
+    client, monkeypatch, telegram_jwks
+):
+    attempts = []
+
+    class FlakyJwkClient:
+        def get_signing_key_from_jwt(self, _id_token):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise jwt.PyJWKClientConnectionError("Temporary JWKS outage")
+            return SimpleNamespace(key=telegram_jwks.private_key.public_key())
+
+    monkeypatch.setattr(
+        auth_tokens, "get_telegram_jwk_client", lambda: FlakyJwkClient()
+    )
+    token = sign_telegram_id_token(
+        telegram_jwks.private_key,
+        sub="42",
+        aud="7525532588",
+        kid="transient-test-key",
+    )
+
+    failed = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+    retried = client.post(
+        "/api/mobile/auth/telegram/native/exchange", json={"id_token": token}
+    )
+
+    assert failed.status_code == 401
+    assert failed.json() == {"detail": "Не удалось подтвердить вход"}
+    assert retried.status_code == 200
+    assert retried.json()["expires_in"] == 900
+    assert attempts == [1, 1]
 
 
 def test_native_exchange_rolls_back_profile_when_refresh_session_creation_fails(

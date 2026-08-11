@@ -30,6 +30,7 @@ _TELEGRAM_JWKS_MAX_KEYS = 16
 _TELEGRAM_UNKNOWN_KID_CACHE_SECONDS = 60
 _TELEGRAM_UNKNOWN_KID_CACHE_SIZE = 64
 _TELEGRAM_PROFILE_FIELD_MAX_LENGTH = 256
+_TELEGRAM_NO_MATCHING_KEY_ERROR = "Unable to find a signing key that matches:"
 _TELEGRAM_JWK_CLIENT_LOCK = RLock()
 _telegram_jwk_client: Optional[PyJWKClient] = None
 _telegram_unknown_kids: OrderedDict[str, float] = OrderedDict()
@@ -123,6 +124,13 @@ def _remember_unknown_telegram_key(kid: str, now: float) -> None:
         _telegram_unknown_kids.popitem(last=False)
 
 
+def _is_definitive_unknown_telegram_key(error: jwt.PyJWKClientError) -> bool:
+    return (
+        type(error) is jwt.PyJWKClientError
+        and str(error).startswith(_TELEGRAM_NO_MATCHING_KEY_ERROR)
+    )
+
+
 def validate_telegram_id_token(id_token: str) -> TelegramIdentity:
     """Validate a Telegram native ID token and return only safe identity data."""
     if (
@@ -142,8 +150,9 @@ def validate_telegram_id_token(id_token: str) -> TelegramIdentity:
                 signing_key = get_telegram_jwk_client().get_signing_key_from_jwt(
                     id_token
                 )
-            except jwt.PyJWKClientError:
-                _remember_unknown_telegram_key(kid, now)
+            except jwt.PyJWKClientError as error:
+                if _is_definitive_unknown_telegram_key(error):
+                    _remember_unknown_telegram_key(kid, now)
                 raise
         claims = jwt.decode(
             id_token,
